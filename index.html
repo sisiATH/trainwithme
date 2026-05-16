@@ -12,7 +12,7 @@
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 <script>
-  window.SUPABASE_URL      = "https://klkvzcttjlvbilqeeoyj.supabase.co";
+  window.SUPABASE_URL      = "https://klkvzcttjlvbilqeeoyj.supabase.co ";
   window.SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtsa3Z6Y3R0amx2YmlscWVlb3lqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4Nzc1MzAsImV4cCI6MjA5NDQ1MzUzMH0.F8cd-GilNryRSDN-aKwNenOmF9pZbC1SSXUjSkauWmE";
   window.STRIPE_PAYMENT_LINK = "https://buy.stripe.com/9B628raNX9wlgIjbzyco000";
 </script>
@@ -127,7 +127,7 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useMemo, useCallback } = React;
 
-const supabase = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+const db = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
 
 const TRIAL_DAYS = 14;
 
@@ -375,7 +375,7 @@ function AuthScreen() {
     if (!email || !email.includes('@')) { setStatus('error'); setErrorMsg('Enter a valid email'); return; }
     setStatus('sending');
     try {
-      const { error } = await supabase.auth.signInWithOtp({
+      const { error } = await db.auth.signInWithOtp({
         email: email.trim(),
         options: { emailRedirectTo: window.location.origin + window.location.pathname }
       });
@@ -470,7 +470,7 @@ function Onboarding({ user, onDone }) {
       sleep_target: Number(sleepTarget) || 7.5,
       onboarded_at: new Date().toISOString(),
     };
-    const { error } = await supabase.from('profiles').upsert(profile);
+    const { error } = await db.from('profiles').upsert(profile);
     setSaving(false);
     if (error) { alert('Could not save: ' + error.message); return; }
     onDone();
@@ -876,14 +876,14 @@ function DailyLog({ profile, todayLog, onLogSaved }) {
       alcohol_units: alcohol ? Number(alcohol) : null,
       sessions, period_today: periodToday, notes,
     };
-    const { error } = await supabase.from('daily_logs').upsert(row, { onConflict: 'user_id,date' });
+    const { error } = await db.from('daily_logs').upsert(row, { onConflict: 'user_id,date' });
 
     // First-log: stamp trial_started_at if not set
     if (!error && !profile.trial_started_at) {
-      await supabase.from('profiles').update({ trial_started_at: new Date().toISOString() }).eq('user_id', profile.user_id);
+      await db.from('profiles').update({ trial_started_at: new Date().toISOString() }).eq('user_id', profile.user_id);
     }
     if (!error && periodToday) {
-      await supabase.from('profiles').update({ last_period_start: date }).eq('user_id', profile.user_id);
+      await db.from('profiles').update({ last_period_start: date }).eq('user_id', profile.user_id);
     }
 
     setSaving(false);
@@ -1402,7 +1402,7 @@ function SettingsView({ profile, onUpdate }) {
       water_target: Number(waterTarget),
       sleep_target: Number(sleepTarget),
     };
-    const { error } = await supabase.from('profiles').update(patch).eq('user_id', profile.user_id);
+    const { error } = await db.from('profiles').update(patch).eq('user_id', profile.user_id);
     setSaving(false);
     if (error) { alert(error.message); return; }
     setSavedAt(new Date());
@@ -1512,23 +1512,23 @@ function App() {
   const [view, setView] = useState('dashboard');
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setLoading(false); });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => setSession(session));
+    db.auth.getSession().then(({ data }) => { setSession(data.session); setLoading(false); });
+    const { data: sub } = db.auth.onAuthStateChange((_event, session) => setSession(session));
     return () => sub.subscription.unsubscribe();
   }, []);
 
   const loadData = useCallback(async () => {
     if (!session) return;
-    const { data: prof } = await supabase.from('profiles').select('*').eq('user_id', session.user.id).maybeSingle();
+    const { data: prof } = await db.from('profiles').select('*').eq('user_id', session.user.id).maybeSingle();
     setProfile(prof);
-    const { data: logRows } = await supabase.from('daily_logs').select('*').eq('user_id', session.user.id).order('date', { ascending: true });
+    const { data: logRows } = await db.from('daily_logs').select('*').eq('user_id', session.user.id).order('date', { ascending: true });
     setLogs(logRows || []);
   }, [session]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
   async function signOut() {
-    await supabase.auth.signOut();
+    await db.auth.signOut();
     setSession(null); setProfile(null); setLogs([]);
   }
 
