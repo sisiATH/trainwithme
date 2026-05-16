@@ -1,0 +1,1567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Train With Me</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Caveat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<script>
+  window.SUPABASE_URL      = "https://klkvzcttjlvbilqeeoyj.supabase.co";
+  window.SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtsa3Z6Y3R0amx2YmlscWVlb3lqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4Nzc1MzAsImV4cCI6MjA5NDQ1MzUzMH0.F8cd-GilNryRSDN-aKwNenOmF9pZbC1SSXUjSkauWmE";
+  window.STRIPE_PAYMENT_LINK = "https://buy.stripe.com/9B628raNX9wlgIjbzyco000";
+</script>
+<style>
+  :root {
+    --bg: #e6e3e3;
+    --surface: #f1eded;
+    --surface-2: #f7f4f4;
+    --teal: #00687a;
+    --teal-deep: #005260;
+    --teal-soft: rgba(0, 104, 122, 0.12);
+    --pink: #ff5bcf;
+    --pink-soft: rgba(255, 91, 207, 0.14);
+    --gold: #cfff04;
+    --gold-soft: rgba(207, 255, 4, 0.18);
+    --text: #1f2628;
+    --text-mute: #61676b;
+    --text-faint: #8d9397;
+    --text-inv: #f8f6f6;
+    --border: rgba(11, 29, 33, 0.10);
+    --divider: rgba(11, 29, 33, 0.06);
+    --success: #417a36;
+    --warn: #b88c00;
+    --danger: #b94747;
+    --r-sm: 12px;
+    --r-md: 18px;
+    --r-lg: 24px;
+    --shadow-sm: 0 4px 12px rgba(31, 38, 40, 0.05);
+    --shadow-md: 0 12px 32px rgba(31, 38, 40, 0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--text); font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; -webkit-font-smoothing: antialiased; }
+  body { min-height: 100vh; }
+  #root { min-height: 100vh; }
+  input, button, select, textarea { font-family: inherit; color: inherit; }
+  button { cursor: pointer; }
+  .script { font-family: 'Caveat', cursive; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  .fade-in { animation: fadeIn 0.25s ease-out; }
+
+  /* Sidebar */
+  .layout { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+  .sidebar { background: var(--teal); color: var(--text-inv); padding: 28px 18px; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 24px; }
+  .brand { display: flex; flex-direction: column; gap: 4px; }
+  .brand-title { font-family: 'Caveat', cursive; font-size: 32px; font-weight: 700; color: var(--pink); line-height: 1; }
+  .brand-sub { font-size: 11px; color: rgba(248, 246, 246, 0.7); line-height: 1.5; }
+  .nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+  .nav-item { background: transparent; border: none; color: rgba(248, 246, 246, 0.85); text-align: left; padding: 11px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
+  .nav-item:hover { background: rgba(255,255,255,0.08); color: white; }
+  .nav-item.active { background: rgba(255,255,255,0.16); color: white; }
+  .sidebar-foot { font-size: 10px; color: rgba(248, 246, 246, 0.5); }
+  .sidebar-foot button { background: transparent; border: none; color: rgba(248, 246, 246, 0.7); font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; padding: 0; }
+
+  .main { padding: 32px 36px 60px; max-width: 100%; overflow-x: hidden; }
+  .page-title { font-size: 28px; font-weight: 700; color: var(--text); margin-bottom: 4px; letter-spacing: -0.3px; }
+  .page-sub { font-size: 14px; color: var(--text-mute); margin-bottom: 24px; }
+
+  .card { background: var(--surface); border-radius: var(--r-md); padding: 20px; border: 1px solid var(--border); }
+  .card-soft { background: var(--surface-2); border-radius: var(--r-md); padding: 20px; border: 1px solid var(--border); }
+  .card-teal { background: var(--teal); color: var(--text-inv); border-radius: var(--r-md); padding: 20px; }
+  .card-gradient { background: linear-gradient(135deg, var(--pink-soft) 0%, var(--gold-soft) 100%); border-radius: var(--r-md); padding: 24px; border: 1px solid var(--border); }
+
+  .label { font-size: 10px; letter-spacing: 1.8px; text-transform: uppercase; color: var(--text-mute); font-weight: 600; }
+  .stat-num { font-size: 32px; font-weight: 700; line-height: 1; color: var(--text); }
+  .stat-num-sm { font-size: 24px; font-weight: 700; line-height: 1; color: var(--text); }
+  .stat-sub { font-size: 11px; color: var(--text-mute); margin-top: 6px; }
+
+  .input { width: 100%; padding: 10px 12px; font-size: 14px; border: 1px solid var(--border); border-radius: 8px; background: white; color: var(--text); outline: none; transition: border-color 0.15s; }
+  .input:focus { border-color: var(--teal); }
+  .input-accent { width: 100%; padding: 12px 14px; font-size: 15px; border: 2px solid var(--teal); border-radius: 10px; background: white; color: var(--text); outline: none; }
+  .field-label { font-size: 11px; color: var(--text-mute); margin-bottom: 5px; font-weight: 500; }
+
+  .btn { background: var(--teal); color: white; border: none; border-radius: 10px; padding: 12px 22px; font-size: 13px; font-weight: 600; letter-spacing: 0.3px; cursor: pointer; transition: background 0.15s; }
+  .btn:hover { background: var(--teal-deep); }
+  .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .btn-ghost { background: transparent; color: var(--teal); border: 1px solid var(--teal); border-radius: 10px; padding: 12px 22px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .btn-pink { background: var(--pink); color: white; border: none; border-radius: 10px; padding: 12px 22px; font-size: 13px; font-weight: 600; cursor: pointer; }
+
+  .pill { display: inline-flex; align-items: center; padding: 5px 11px; border-radius: 14px; font-size: 11px; font-weight: 600; letter-spacing: 0.3px; }
+  .pill-teal { background: var(--teal-soft); color: var(--teal); }
+  .pill-pink { background: var(--pink-soft); color: var(--pink); }
+  .pill-gold { background: var(--gold-soft); color: var(--text); }
+  .pill-warn { background: rgba(184, 140, 0, 0.12); color: var(--warn); }
+
+  .row { display: grid; gap: 14px; }
+  .row-2 { grid-template-columns: 1fr 1fr; }
+  .row-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .row-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+  .row-5 { grid-template-columns: repeat(5, 1fr); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; padding: 10px 8px; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-mute); font-weight: 600; border-bottom: 1px solid var(--border); }
+  td { padding: 10px 8px; border-bottom: 1px solid var(--divider); }
+
+  @media (max-width: 800px) {
+    .layout { grid-template-columns: 1fr; }
+    .sidebar { position: relative; height: auto; flex-direction: row; flex-wrap: wrap; padding: 16px; gap: 12px; }
+    .nav { flex-direction: row; flex-wrap: wrap; flex: 1 1 100%; }
+    .nav-item { flex: 1; min-width: 0; padding: 8px 10px; font-size: 11px; text-align: center; }
+    .brand { flex: 0 0 auto; }
+    .sidebar-foot { display: none; }
+    .main { padding: 20px 16px 40px; }
+    .row-4 { grid-template-columns: 1fr 1fr; }
+    .row-5 { grid-template-columns: 1fr 1fr; }
+    .row-3 { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useCallback } = React;
+
+const supabase = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+
+const TRIAL_DAYS = 14;
+
+// ============================================================
+// UTILITIES
+// ============================================================
+const today = () => { const d = new Date(); d.setHours(0,0,0,0); return d; };
+const ymd = (d) => {
+  const dt = (d instanceof Date) ? d : new Date(d);
+  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+};
+const parseYMD = (s) => { if (!s) return null; const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); };
+const daysBetween = (a, b) => Math.round((b - a) / 86400000);
+const fmt1 = (n) => (n === null || n === undefined || isNaN(n)) ? '–' : Number(n).toFixed(1);
+const fmt0 = (n) => (n === null || n === undefined || isNaN(n)) ? '–' : Math.round(Number(n)).toLocaleString();
+
+const toDisplayWeight = (kg, unit) => {
+  if (kg === null || kg === undefined || kg === '') return null;
+  return unit === 'lbs' ? kg * 2.20462 : kg;
+};
+const fromDisplayWeight = (val, unit) => {
+  if (val === null || val === undefined || val === '') return null;
+  const n = Number(val);
+  if (isNaN(n)) return null;
+  return unit === 'lbs' ? n / 2.20462 : n;
+};
+
+function calcPhase(cycleDay, cycleLength, periodLength) {
+  if (!cycleDay || !cycleLength) return null;
+  if (cycleDay <= (periodLength || 5)) return 'Menstrual';
+  const foll = Math.round(cycleLength * 0.45);
+  const ovul = Math.round(cycleLength * 0.55);
+  if (cycleDay <= foll) return 'Follicular';
+  if (cycleDay <= ovul) return 'Ovulatory';
+  return 'Luteal';
+}
+
+function calcRecovery(t, baselines) {
+  if (!t) return null;
+  const { hrv, rhr, sleep_quality } = t;
+  const { hrvAvg, rhrAvg } = baselines;
+  if (!hrv || !rhr || !sleep_quality || !hrvAvg || !rhrAvg) return null;
+  return (hrv / hrvAvg) * 0.4 + (rhrAvg / rhr) * 0.3 + (sleep_quality / 5) * 0.3;
+}
+function recoveryLabel(s) {
+  if (s === null) return { label: 'Not enough data', tone: 'neutral' };
+  if (s >= 1.05) return { label: 'Recovered', tone: 'green' };
+  if (s >= 0.95) return { label: 'Steady', tone: 'yellow' };
+  return { label: 'Take it easy', tone: 'red' };
+}
+function calcStepTarget(b, r) {
+  if (!b) return null;
+  if (r === null) return b;
+  return Math.round((b * Math.max(0.7, Math.min(1.25, r))) / 100) * 100;
+}
+function avg(arr, key) {
+  const vals = arr.map(x => x[key]).filter(v => v !== null && v !== undefined && !isNaN(v) && v > 0);
+  if (!vals.length) return null;
+  return vals.reduce((a,b) => a + b, 0) / vals.length;
+}
+
+function fuelling(kg, sessionType, durationMin, phase) {
+  if (!kg || !sessionType) return null;
+  const isRest = ['Rest', 'Walk', 'Yoga/mobility'].includes(sessionType);
+  if (isRest) return { preCarbs: 0, preProtein: 0, intraCarbs: 0, postProtein: 0, postCarbs: 0 };
+  const carbMult = { 'Strength': 0.75, 'Zone 2': 1.0, 'HIIT': 1.0, 'Long endurance': 1.5, 'Swim': 1.0, 'Football': 1.0, 'Run': 1.0 }[sessionType] || 0.75;
+  let preCarbs = Math.round(kg * carbMult);
+  const preProtein = Math.round(kg * 0.25);
+  let intraCarbs = 0;
+  if (durationMin > 60 && ['Zone 2', 'Long endurance', 'Football', 'Run'].includes(sessionType)) {
+    intraCarbs = Math.round((durationMin - 60) / 60 * 45);
+  } else if (durationMin > 60 && sessionType === 'HIIT') {
+    intraCarbs = Math.round((durationMin - 60) / 60 * 30);
+  }
+  const postProtein = Math.round(kg * 0.4);
+  const postCarbMult = { 'Strength': 0.75, 'HIIT': 1.0, 'Zone 2': 0.75, 'Long endurance': 1.25, 'Swim': 0.75, 'Football': 1.0, 'Run': 1.0 }[sessionType] || 0.75;
+  let postCarbs = Math.round(kg * postCarbMult);
+  if (phase === 'Luteal') {
+    preCarbs = Math.round(preCarbs * 1.15);
+    postCarbs = Math.round(postCarbs * 1.15);
+  }
+  return { preCarbs, preProtein, intraCarbs, postProtein, postCarbs };
+}
+
+const PHASE_GUIDANCE = {
+  Menstrual: {
+    prioritize: 'Recovery, sleep, gentle movement. Skip intensity.',
+    train: 'Lighter loads. Mobility, walking, gentle yoga. Honour the rest if energy is low.',
+    eat: 'Iron-rich foods (red meat, lentils, dark greens). Extra water. Magnesium for cramps.',
+  },
+  Follicular: {
+    prioritize: 'Build muscle, hit volume, challenge yourself.',
+    train: 'Best window for intensity, PRs, hard sessions. Push your step target.',
+    eat: 'Standard fuelling. Carbs around sessions. Estrogen is rising — energy is good.',
+  },
+  Ovulatory: {
+    prioritize: 'Power, strength, sprints. Don\'t restrict food.',
+    train: 'Peak strength. Watch joint stability (ACL/knee). Go for it but with form.',
+    eat: 'Standard. Don\'t under-eat — recovery demands are high.',
+  },
+  Luteal: {
+    prioritize: 'Steady cardio, magnesium 300-400mg evening, manage sleep disruption.',
+    train: 'Volume down 20% if RPE > 8. More zone 2, less HIIT. Cravings are real.',
+    eat: '+15% carbs. 30g fibre. Eat the extra food — appetite is hormonal, not failure.',
+  },
+};
+
+// ============================================================
+// SHARED COMPONENTS
+// ============================================================
+function MultiLineChart({ series, w = 480, h = 180 }) {
+  const leftSeries = series.filter(s => s.axis === 'left');
+  const rightSeries = series.filter(s => s.axis === 'right');
+  const leftAll = leftSeries.flatMap(s => s.values).filter(v => v !== null && v !== undefined);
+  const rightAll = rightSeries.flatMap(s => s.values).filter(v => v !== null && v !== undefined);
+  if (!leftAll.length && !rightAll.length) {
+    return <div style={{ fontSize: 12, color: 'var(--text-faint)', fontStyle: 'italic', padding: '24px 0', textAlign: 'center' }}>Charts appear after a few days of logging.</div>;
+  }
+  const leftMin = leftAll.length ? Math.min(...leftAll) : 0;
+  const leftMax = leftAll.length ? Math.max(...leftAll) : 1;
+  const leftRange = leftMax - leftMin || 1;
+  const rightMin = rightAll.length ? Math.min(...rightAll) : 0;
+  const rightMax = rightAll.length ? Math.max(...rightAll) : 1;
+  const rightRange = rightMax - rightMin || 1;
+  const n = series[0]?.values.length || 0;
+  const padX = 30; const padY = 16;
+  const innerW = w - padX * 2;
+  const innerH = h - padY * 2;
+  const pointsFor = (s) => s.values.map((v, i) => {
+    if (v === null || v === undefined) return null;
+    const x = padX + (i / Math.max(n - 1, 1)) * innerW;
+    const min = s.axis === 'left' ? leftMin : rightMin;
+    const range = s.axis === 'left' ? leftRange : rightRange;
+    const y = padY + innerH - ((v - min) / range) * innerH;
+    return { x, y };
+  }).filter(Boolean);
+  return (
+    <svg width="100%" viewBox={`0 0 ${w} ${h}`} style={{ display: 'block' }}>
+      {[0, 0.25, 0.5, 0.75, 1].map(t => (
+        <line key={t} x1={padX} y1={padY + t * innerH} x2={padX + innerW} y2={padY + t * innerH} stroke="rgba(11,29,33,0.08)" strokeWidth={0.5} />
+      ))}
+      {series.map((s, si) => {
+        const pts = pointsFor(s);
+        if (!pts.length) return null;
+        const pathD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+        return (
+          <g key={si}>
+            <path d={pathD} fill="none" stroke={s.color} strokeWidth={2.5} />
+            {pts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={i === pts.length - 1 ? 4 : 2.5} fill={s.color} />)}
+          </g>
+        );
+      })}
+      {leftAll.length > 0 && (
+        <>
+          <text x={padX - 4} y={padY + 4} fontSize="9" fill={leftSeries[0].color} textAnchor="end">{leftMax.toFixed(1)}</text>
+          <text x={padX - 4} y={padY + innerH} fontSize="9" fill={leftSeries[0].color} textAnchor="end">{leftMin.toFixed(1)}</text>
+        </>
+      )}
+      {rightAll.length > 0 && (
+        <>
+          <text x={padX + innerW + 4} y={padY + 4} fontSize="9" fill={rightSeries[0].color}>{rightMax.toFixed(1)}</text>
+          <text x={padX + innerW + 4} y={padY + innerH} fontSize="9" fill={rightSeries[0].color}>{rightMin.toFixed(1)}</text>
+        </>
+      )}
+    </svg>
+  );
+}
+
+function ChartLegend({ items }) {
+  return (
+    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 10, color: 'var(--text-mute)', marginTop: 4 }}>
+      {items.map((it, i) => (
+        <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <span style={{ display: 'inline-block', width: 10, height: 2, background: it.color, borderRadius: 1 }} />
+          {it.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function CycleBar({ cycleDay, cycleLen = 28, periodLen = 5 }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cycleLen}, 1fr)`, gap: 2 }}>
+      {Array.from({ length: cycleLen }, (_, i) => {
+        const d = i + 1;
+        const p = calcPhase(d, cycleLen, periodLen);
+        const color = p === 'Menstrual' ? '#ff5bcf' : p === 'Follicular' ? 'rgba(255,91,207,0.5)' : p === 'Ovulatory' ? '#cfff04' : '#00687a';
+        const isToday = d === cycleDay;
+        return <div key={i} style={{ height: isToday ? 11 : 7, background: color, opacity: !cycleDay || d <= cycleDay ? 1 : 0.3, borderRadius: 2, transition: 'all 0.3s' }} />;
+      })}
+    </div>
+  );
+}
+
+function PillBtn({ active, onClick, children, color = 'teal' }) {
+  const styles = active
+    ? { background: color === 'pink' ? 'var(--pink)' : 'var(--teal)', color: 'white', border: `1px solid ${color === 'pink' ? 'var(--pink)' : 'var(--teal)'}` }
+    : { background: 'white', color: 'var(--text)', border: '1px solid var(--border)' };
+  return (
+    <button onClick={onClick} style={{
+      flex: 1, padding: '10px 14px', borderRadius: 8,
+      fontWeight: 500, fontSize: 13, cursor: 'pointer', ...styles,
+    }}>{children}</button>
+  );
+}
+
+function AddSessionRow({ onAdd, onCancel }) {
+  const [type, setType] = useState('Walk');
+  const [duration, setDuration] = useState('');
+  const [rpe, setRpe] = useState('');
+  const [timeOfDay, setTimeOfDay] = useState('PM');
+  return (
+    <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: 12, marginTop: 10, border: '1px solid var(--border)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
+        <select value={timeOfDay} onChange={(e) => setTimeOfDay(e.target.value)} className="input">
+          <option>AM</option><option>Midday</option><option>PM</option>
+        </select>
+        <select value={type} onChange={(e) => setType(e.target.value)} className="input">
+          <option>Strength</option><option>Walk</option><option>Zone 2</option>
+          <option>HIIT</option><option>Yoga/mobility</option><option>Swim</option>
+          <option>Football</option><option>Run</option><option>Long endurance</option>
+          <option>Other</option>
+        </select>
+        <input type="number" placeholder="Minutes" value={duration} onChange={(e) => setDuration(e.target.value)} className="input" />
+        <input type="number" min="1" max="10" placeholder="RPE 1-10" value={rpe} onChange={(e) => setRpe(e.target.value)} className="input" />
+      </div>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <button onClick={onCancel} className="btn-ghost" style={{ padding: '8px 16px', fontSize: 12 }}>Cancel</button>
+        <button onClick={() => duration && onAdd({ type, duration: Number(duration), rpe: Number(rpe) || null, timeOfDay })} className="btn" style={{ padding: '8px 16px', fontSize: 12 }}>Add</button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// AUTH
+// ============================================================
+function AuthScreen() {
+  const [email, setEmail] = useState('');
+  const [status, setStatus] = useState('idle');
+  const [errorMsg, setErrorMsg] = useState('');
+
+  async function sendMagicLink() {
+    if (!email || !email.includes('@')) { setStatus('error'); setErrorMsg('Enter a valid email'); return; }
+    setStatus('sending');
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email: email.trim(),
+        options: { emailRedirectTo: window.location.origin + window.location.pathname }
+      });
+      if (error) throw error;
+      setStatus('sent');
+    } catch (err) {
+      setStatus('error');
+      setErrorMsg(err.message || 'Something went wrong');
+    }
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24, background: 'var(--bg)' }}>
+      <div style={{ maxWidth: 460, width: '100%' }}>
+        <div style={{ textAlign: 'center', marginBottom: 36 }}>
+          <h1 className="script" style={{ fontSize: 56, color: 'var(--pink)', lineHeight: 1, marginBottom: 8 }}>Train with me</h1>
+          <p style={{ fontSize: 14, color: 'var(--text-mute)', lineHeight: 1.6 }}>
+            For women training through peri. Track what's working, fuel sessions, move with your cycle.
+          </p>
+        </div>
+
+        {status === 'sent' ? (
+          <div className="card" style={{ textAlign: 'center', padding: 32 }}>
+            <p style={{ fontSize: 18, fontWeight: 600, color: 'var(--teal)', marginBottom: 10 }}>Check your inbox</p>
+            <p style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.6 }}>
+              We sent a sign-in link to <strong>{email}</strong>. Tap it on this device.
+            </p>
+          </div>
+        ) : (
+          <div className="card" style={{ padding: 28 }}>
+            <p className="label" style={{ marginBottom: 8 }}>Your email</p>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className="input-accent" onKeyDown={(e) => e.key === 'Enter' && sendMagicLink()} />
+            <button className="btn" style={{ width: '100%', marginTop: 14 }} onClick={sendMagicLink} disabled={status === 'sending'}>
+              {status === 'sending' ? 'Sending...' : 'Continue'}
+            </button>
+            {status === 'error' && <p style={{ fontSize: 12, color: 'var(--danger)', marginTop: 12, textAlign: 'center' }}>{errorMsg}</p>}
+            <p style={{ fontSize: 12, color: 'var(--text-faint)', textAlign: 'center', marginTop: 18, lineHeight: 1.5 }}>
+              Free for 14 days from your first log. No card needed to start.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// ONBOARDING
+// ============================================================
+function Onboarding({ user, onDone }) {
+  const [name, setName] = useState('');
+  const [unit, setUnit] = useState('kg');
+  const [startWeight, setStartWeight] = useState('');
+  const [goalWeight, setGoalWeight] = useState('');
+  const [goalDate, setGoalDate] = useState(ymd(new Date(Date.now() + 21*86400000)));
+  const [lifeStage, setLifeStage] = useState('Perimenopause');
+  const [height, setHeight] = useState('');
+  const [age, setAge] = useState('');
+  const [trackCycle, setTrackCycle] = useState(true);
+  const [regularity, setRegularity] = useState('Irregular');
+  const [knowLength, setKnowLength] = useState(false);
+  const [lastPeriod, setLastPeriod] = useState('');
+  const [cycleLength, setCycleLength] = useState(28);
+  const [periodLength, setPeriodLength] = useState(5);
+  const [baselineSteps, setBaselineSteps] = useState(8000);
+  const [proteinTarget, setProteinTarget] = useState(110);
+  const [waterTarget, setWaterTarget] = useState(2.5);
+  const [sleepTarget, setSleepTarget] = useState(7.5);
+  const [saving, setSaving] = useState(false);
+
+  const isPeri = lifeStage === 'Perimenopause' || lifeStage === 'Post-menopause';
+  const hasCycles = !(regularity === 'None anymore');
+
+  async function save() {
+    setSaving(true);
+    const profile = {
+      user_id: user.id, email: user.email, name: name.trim(), unit_system: unit,
+      start_weight_kg: fromDisplayWeight(startWeight, unit),
+      goal_weight_kg: fromDisplayWeight(goalWeight, unit),
+      goal_date: goalDate, life_stage: lifeStage,
+      height_cm: height ? Number(height) : null,
+      age: age ? Number(age) : null,
+      track_cycle: trackCycle && hasCycles,
+      cycle_regularity: trackCycle ? regularity : null,
+      cycle_length_auto: knowLength,
+      last_period_start: lastPeriod || null,
+      cycle_length: Number(cycleLength) || 28,
+      period_length: Number(periodLength) || 5,
+      baseline_steps: Number(baselineSteps) || 8000,
+      protein_target: Number(proteinTarget) || 110,
+      water_target: Number(waterTarget) || 2.5,
+      sleep_target: Number(sleepTarget) || 7.5,
+      onboarded_at: new Date().toISOString(),
+    };
+    const { error } = await supabase.from('profiles').upsert(profile);
+    setSaving(false);
+    if (error) { alert('Could not save: ' + error.message); return; }
+    onDone();
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', padding: '36px 20px 60px', background: 'var(--bg)' }}>
+      <div style={{ maxWidth: 560, margin: '0 auto' }}>
+        <div style={{ textAlign: 'center', marginBottom: 28 }}>
+          <h1 className="script" style={{ fontSize: 42, color: 'var(--pink)', lineHeight: 1, marginBottom: 6 }}>Train with me</h1>
+          <p style={{ fontSize: 14, color: 'var(--text-mute)' }}>Quick setup. Takes a minute.</p>
+        </div>
+
+        <div className="card" style={{ marginBottom: 14 }}>
+          <div className="label" style={{ marginBottom: 14 }}>About you</div>
+          <div className="row row-2">
+            <div><div className="field-label">Name</div><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="First name" /></div>
+            <div><div className="field-label">Life stage</div>
+              <select className="input" value={lifeStage} onChange={(e) => setLifeStage(e.target.value)}>
+                <option>Pre-menopause</option><option>Perimenopause</option><option>Post-menopause</option>
+              </select>
+            </div>
+            <div><div className="field-label">Height (cm)</div><input type="number" className="input" value={height} onChange={(e) => setHeight(e.target.value)} /></div>
+            <div><div className="field-label">Age</div><input type="number" className="input" value={age} onChange={(e) => setAge(e.target.value)} /></div>
+          </div>
+        </div>
+
+        <div className="card" style={{ marginBottom: 14 }}>
+          <div className="label" style={{ marginBottom: 14 }}>Units</div>
+          <div style={{ display: 'flex', gap: 8, maxWidth: 280 }}>
+            <PillBtn active={unit === 'kg'} onClick={() => setUnit('kg')}>kg</PillBtn>
+            <PillBtn active={unit === 'lbs'} onClick={() => setUnit('lbs')}>lbs</PillBtn>
+          </div>
+        </div>
+
+        <div className="card" style={{ marginBottom: 14 }}>
+          <div className="label" style={{ marginBottom: 14 }}>Your goal</div>
+          <div className="row row-3">
+            <div><div className="field-label">Starting weight ({unit})</div><input type="number" step="0.1" className="input" value={startWeight} onChange={(e) => setStartWeight(e.target.value)} /></div>
+            <div><div className="field-label">Goal weight ({unit})</div><input type="number" step="0.1" className="input" value={goalWeight} onChange={(e) => setGoalWeight(e.target.value)} /></div>
+            <div><div className="field-label">By when</div><input type="date" className="input" value={goalDate} onChange={(e) => setGoalDate(e.target.value)} /></div>
+          </div>
+        </div>
+
+        <div className="card" style={{ marginBottom: 14 }}>
+          <div className="label" style={{ marginBottom: 14 }}>Cycle</div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <input type="checkbox" checked={trackCycle} onChange={(e) => setTrackCycle(e.target.checked)} style={{ width: 16, height: 16, accentColor: 'var(--teal)' }} />
+            <span style={{ fontSize: 14 }}>Track my cycle</span>
+          </label>
+
+          {trackCycle && (
+            <>
+              {isPeri && (
+                <div style={{ marginBottom: 14 }}>
+                  <div className="field-label">Are your cycles regular?</div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <PillBtn active={regularity === 'Regular'} onClick={() => setRegularity('Regular')}>Regular</PillBtn>
+                    <PillBtn active={regularity === 'Irregular'} onClick={() => setRegularity('Irregular')}>Irregular</PillBtn>
+                    {lifeStage === 'Post-menopause' && (
+                      <PillBtn active={regularity === 'None anymore'} onClick={() => setRegularity('None anymore')}>None anymore</PillBtn>
+                    )}
+                  </div>
+                  {regularity === 'Irregular' && (
+                    <p style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 8, fontStyle: 'italic' }}>
+                      Log "period started today" when it happens — we'll learn your rhythm.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {hasCycles && (
+                <>
+                  <div className="row row-3" style={{ marginBottom: 10 }}>
+                    <div><div className="field-label">Last period start</div><input type="date" className="input" value={lastPeriod} onChange={(e) => setLastPeriod(e.target.value)} /></div>
+                    <div>
+                      <div className="field-label">Cycle length (days)</div>
+                      <input type="number" className="input" value={cycleLength} onChange={(e) => setCycleLength(e.target.value)} disabled={knowLength} />
+                    </div>
+                    <div><div className="field-label">Period length (days)</div><input type="number" className="input" value={periodLength} onChange={(e) => setPeriodLength(e.target.value)} /></div>
+                  </div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-mute)' }}>
+                    <input type="checkbox" checked={knowLength} onChange={(e) => setKnowLength(e.target.checked)} style={{ width: 14, height: 14, accentColor: 'var(--teal)' }} />
+                    I don't know — track it for me
+                  </label>
+                </>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="card" style={{ marginBottom: 22 }}>
+          <div className="label" style={{ marginBottom: 14 }}>Daily targets</div>
+          <div className="row row-4">
+            <div><div className="field-label">Steps</div><input type="number" className="input" value={baselineSteps} onChange={(e) => setBaselineSteps(e.target.value)} /></div>
+            <div><div className="field-label">Protein (g)</div><input type="number" className="input" value={proteinTarget} onChange={(e) => setProteinTarget(e.target.value)} /></div>
+            <div><div className="field-label">Water (L)</div><input type="number" step="0.1" className="input" value={waterTarget} onChange={(e) => setWaterTarget(e.target.value)} /></div>
+            <div><div className="field-label">Sleep (hrs)</div><input type="number" step="0.1" className="input" value={sleepTarget} onChange={(e) => setSleepTarget(e.target.value)} /></div>
+          </div>
+        </div>
+
+        <button className="btn" style={{ width: '100%', padding: 16, fontSize: 14 }} onClick={save} disabled={saving || !name}>
+          {saving ? 'Saving...' : 'Start tracking'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// SIDEBAR
+// ============================================================
+function Sidebar({ view, setView, profile, onSignOut, trialDaysLeft, isPaid }) {
+  const items = [
+    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'log', label: 'Daily log' },
+    { id: 'cycle', label: 'Cycle insights' },
+    { id: 'trends', label: 'Weight trends' },
+    { id: 'recovery', label: 'Recovery & training' },
+    { id: 'settings', label: 'Settings' },
+  ];
+  return (
+    <aside className="sidebar">
+      <div className="brand">
+        <span className="brand-title">Train with me</span>
+        <span className="brand-sub">{profile?.name ? `Hi, ${profile.name}` : 'Welcome'}</span>
+      </div>
+      <nav className="nav">
+        {items.map(it => (
+          <button key={it.id} className={`nav-item ${view === it.id ? 'active' : ''}`} onClick={() => setView(it.id)}>
+            {it.label}
+          </button>
+        ))}
+      </nav>
+      <div className="sidebar-foot">
+        {!isPaid && trialDaysLeft !== null && (
+          <div style={{ marginBottom: 14, padding: 12, background: 'rgba(255,255,255,0.06)', borderRadius: 10 }}>
+            <div style={{ fontSize: 11, color: 'rgba(248,246,246,0.8)', marginBottom: 4 }}>
+              {trialDaysLeft > 0 ? `${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} left in trial` : 'Trial ended'}
+            </div>
+            <button onClick={() => window.open(window.STRIPE_PAYMENT_LINK, '_blank')} style={{ width: '100%', background: 'var(--pink)', color: 'white', border: 'none', borderRadius: 6, padding: '8px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+              Upgrade
+            </button>
+          </div>
+        )}
+        <button onClick={onSignOut}>Sign out</button>
+      </div>
+    </aside>
+  );
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+function Dashboard({ profile, logs, todayLog, setView }) {
+  const unit = profile.unit_system || 'kg';
+  const recent28 = useMemo(() => logs.slice(-28), [logs]);
+  const baselines = { hrvAvg: avg(recent28, 'hrv'), rhrAvg: avg(recent28, 'rhr') };
+  const recovery = calcRecovery(todayLog, baselines);
+  const rec = recoveryLabel(recovery);
+  const stepTarget = calcStepTarget(profile.baseline_steps, recovery);
+
+  let cycleDay = null;
+  let phase = null;
+  if (profile.track_cycle && profile.last_period_start) {
+    const days = daysBetween(parseYMD(profile.last_period_start), today());
+    if (days >= 0) {
+      cycleDay = (days % (profile.cycle_length || 28)) + 1;
+      phase = calcPhase(cycleDay, profile.cycle_length, profile.period_length);
+    }
+  }
+  const guide = phase ? PHASE_GUIDANCE[phase] : null;
+
+  const recent7 = useMemo(() => logs.slice(-7), [logs]);
+  const weight7d = avg(recent7, 'weight_kg');
+  const startW = profile.start_weight_kg;
+  const goalW = profile.goal_weight_kg;
+  const change = (weight7d !== null && startW) ? (weight7d - startW) : null;
+  const totalChange = (goalW !== null && startW !== null) ? (goalW - startW) : null;
+  const goalDate = parseYMD(profile.goal_date);
+  const daysLeft = goalDate ? Math.max(0, daysBetween(today(), goalDate)) : null;
+  const recDot = rec.tone === 'green' ? 'var(--success)' : rec.tone === 'red' ? 'var(--danger)' : rec.tone === 'yellow' ? 'var(--warn)' : 'var(--text-faint)';
+
+  return (
+    <div className="fade-in">
+      <h1 className="page-title">Dashboard</h1>
+      <p className="page-sub">Today's signal — what's changing and what to do about it.</p>
+
+      {/* Hero row */}
+      <div className="row" style={{ gridTemplateColumns: '1.4fr 1fr', marginBottom: 16 }}>
+        <div className="card-gradient">
+          <span className="pill pill-pink" style={{ marginBottom: 14 }}>Today's focus</span>
+          <h2 style={{ fontSize: 26, fontWeight: 700, lineHeight: 1.2, marginBottom: 12, color: 'var(--text)' }}>
+            {recovery === null ? 'Set a baseline this week.' :
+             recovery >= 1.05 ? 'Recovered — push NEAT today.' :
+             recovery >= 0.95 ? 'Steady. Stick to the plan.' :
+             'Take it easy. Walking only.'}
+          </h2>
+          <p style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.6 }}>
+            {phase
+              ? `${phase} phase, day ${cycleDay}. ${guide?.prioritize || ''}`
+              : 'Log a few days to unlock recovery score and phase guidance.'}
+          </p>
+        </div>
+
+        <div className="card-teal">
+          <div style={{ fontSize: 10, letterSpacing: 1.8, textTransform: 'uppercase', opacity: 0.7, marginBottom: 10 }}>Auto insight</div>
+          <h3 style={{ fontSize: 17, fontWeight: 700, lineHeight: 1.3, marginBottom: 10 }}>
+            {phase === 'Luteal' ? 'Maintain intensity, trim volume if recovery drops' :
+             phase === 'Menstrual' ? 'Rest is training. Move gently, eat iron.' :
+             phase === 'Follicular' ? 'Best window for PRs and intensity' :
+             phase === 'Ovulatory' ? 'Peak strength — go for it' :
+             'Log today\'s data to see today\'s focus'}
+          </h3>
+          {guide && (
+            <p style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.6 }}>
+              {guide.train}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Key metrics row */}
+      <div className="row row-5" style={{ marginBottom: 16 }}>
+        <div className="card">
+          <div className="label">Recovery</div>
+          <div className="stat-num" style={{ marginTop: 8 }}>{recovery === null ? '–' : recovery.toFixed(2)}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: recDot }} />
+            <span className="stat-sub" style={{ margin: 0 }}>{rec.label}</span>
+          </div>
+        </div>
+        <div className="card">
+          <div className="label">Today's steps</div>
+          <div className="stat-num" style={{ marginTop: 8 }}>{stepTarget ? stepTarget.toLocaleString() : '–'}</div>
+          <div className="stat-sub">target</div>
+        </div>
+        <div className="card">
+          <div className="label">Weight (7-day)</div>
+          <div className="stat-num" style={{ marginTop: 8 }}>
+            {weight7d !== null ? fmt1(toDisplayWeight(weight7d, unit)) : '–'}
+            <span style={{ fontSize: 13, color: 'var(--text-mute)', marginLeft: 4 }}>{unit}</span>
+          </div>
+          {change !== null && (
+            <div className="stat-sub" style={{ color: change <= 0 ? 'var(--success)' : 'var(--text-mute)' }}>
+              {change > 0 ? '+' : ''}{fmt1(toDisplayWeight(change, unit))} from start
+            </div>
+          )}
+        </div>
+        <div className="card">
+          <div className="label">Phase</div>
+          <div className="stat-num-sm" style={{ marginTop: 8, color: 'var(--teal)' }}>{phase || '–'}</div>
+          <div className="stat-sub">{cycleDay ? `day ${cycleDay}` : 'not tracking'}</div>
+        </div>
+        <div className="card">
+          <div className="label">Days to goal</div>
+          <div className="stat-num" style={{ marginTop: 8 }}>{daysLeft ?? '–'}</div>
+          <div className="stat-sub">
+            {totalChange !== null && change !== null
+              ? `${fmt1(toDisplayWeight(change, unit))} of ${fmt1(toDisplayWeight(totalChange, unit))} ${unit}`
+              : '–'}
+          </div>
+        </div>
+      </div>
+
+      {/* Cycle bar */}
+      {profile.track_cycle && cycleDay && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+            <div className="label">Cycle</div>
+            <div style={{ fontSize: 10, color: 'var(--text-mute)', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <span><span style={{ display: 'inline-block', width: 8, height: 8, background: 'var(--pink)', borderRadius: 2, marginRight: 4 }} />Menstrual</span>
+              <span><span style={{ display: 'inline-block', width: 8, height: 8, background: 'rgba(255,91,207,0.5)', borderRadius: 2, marginRight: 4 }} />Follicular</span>
+              <span><span style={{ display: 'inline-block', width: 8, height: 8, background: 'var(--gold)', borderRadius: 2, marginRight: 4 }} />Ovulatory</span>
+              <span><span style={{ display: 'inline-block', width: 8, height: 8, background: 'var(--teal)', borderRadius: 2, marginRight: 4 }} />Luteal</span>
+            </div>
+          </div>
+          <CycleBar cycleDay={cycleDay} cycleLen={profile.cycle_length || 28} periodLen={profile.period_length || 5} />
+        </div>
+      )}
+
+      {/* Phase guidance */}
+      {guide && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
+            <h3 style={{ fontSize: 17, fontWeight: 600 }}>{phase} guidance</h3>
+            <span className="pill pill-teal">day {cycleDay} of {profile.cycle_length || 28}</span>
+          </div>
+          <div className="row row-3">
+            <div>
+              <div className="label" style={{ color: 'var(--pink)', marginBottom: 6 }}>Prioritize</div>
+              <p style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text)' }}>{guide.prioritize}</p>
+            </div>
+            <div>
+              <div className="label" style={{ color: 'var(--pink)', marginBottom: 6 }}>Train</div>
+              <p style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text)' }}>{guide.train}</p>
+            </div>
+            <div>
+              <div className="label" style={{ color: 'var(--pink)', marginBottom: 6 }}>Eat</div>
+              <p style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text)' }}>{guide.eat}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CTA to log */}
+      {!todayLog && (
+        <div className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Haven't logged today yet</h3>
+            <p style={{ fontSize: 13, color: 'var(--text-mute)' }}>Open the Daily log to fill in today's data.</p>
+          </div>
+          <button onClick={() => setView('log')} className="btn">Log today</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// DAILY LOG (full page, own tab)
+// ============================================================
+function DailyLog({ profile, todayLog, onLogSaved }) {
+  const unit = profile.unit_system || 'kg';
+  const [date, setDate] = useState(ymd(today()));
+  const [weight, setWeight] = useState('');
+  const [bodyFat, setBodyFat] = useState('');
+  const [muscle, setMuscle] = useState('');
+  const [bodyWater, setBodyWater] = useState('');
+  const [hrv, setHrv] = useState('');
+  const [rhr, setRhr] = useState('');
+  const [sleep, setSleep] = useState('');
+  const [sleepQuality, setSleepQuality] = useState('');
+  const [steps, setSteps] = useState('');
+  const [caloriesIn, setCaloriesIn] = useState('');
+  const [caloriesOut, setCaloriesOut] = useState('');
+  const [protein, setProtein] = useState('');
+  const [carbs, setCarbs] = useState('');
+  const [fat, setFat] = useState('');
+  const [fibre, setFibre] = useState('');
+  const [water, setWater] = useState('');
+  const [mood, setMood] = useState('');
+  const [stress, setStress] = useState('');
+  const [caffeine, setCaffeine] = useState('');
+  const [alcohol, setAlcohol] = useState('');
+  const [sessions, setSessions] = useState([]);
+  const [periodToday, setPeriodToday] = useState(false);
+  const [notes, setNotes] = useState('');
+  const [showAddSession, setShowAddSession] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState(null);
+
+  useEffect(() => {
+    if (!todayLog) return;
+    setWeight(todayLog.weight_kg ? fmt1(toDisplayWeight(todayLog.weight_kg, unit)) : '');
+    setBodyFat(todayLog.body_fat_pct || '');
+    setMuscle(todayLog.muscle_kg ? fmt1(toDisplayWeight(todayLog.muscle_kg, unit)) : '');
+    setBodyWater(todayLog.body_water_pct || '');
+    setHrv(todayLog.hrv || '');
+    setRhr(todayLog.rhr || '');
+    setSleep(todayLog.sleep_hours || '');
+    setSleepQuality(todayLog.sleep_quality || '');
+    setSteps(todayLog.steps || '');
+    setCaloriesIn(todayLog.calories_in || '');
+    setCaloriesOut(todayLog.calories_out || '');
+    setProtein(todayLog.protein_g || '');
+    setCarbs(todayLog.carbs_g || '');
+    setFat(todayLog.fat_g || '');
+    setFibre(todayLog.fibre_g || '');
+    setWater(todayLog.water_l || '');
+    setMood(todayLog.mood || '');
+    setStress(todayLog.stress || '');
+    setCaffeine(todayLog.caffeine_mg || '');
+    setAlcohol(todayLog.alcohol_units || '');
+    setSessions(todayLog.sessions || []);
+    setPeriodToday(!!todayLog.period_today);
+    setNotes(todayLog.notes || '');
+  }, [todayLog, unit]);
+
+  async function saveLog() {
+    setSaving(true);
+    const row = {
+      user_id: profile.user_id, date,
+      weight_kg: fromDisplayWeight(weight, unit),
+      body_fat_pct: bodyFat ? Number(bodyFat) : null,
+      muscle_kg: fromDisplayWeight(muscle, unit),
+      body_water_pct: bodyWater ? Number(bodyWater) : null,
+      hrv: hrv ? Number(hrv) : null,
+      rhr: rhr ? Number(rhr) : null,
+      sleep_hours: sleep ? Number(sleep) : null,
+      sleep_quality: sleepQuality ? Number(sleepQuality) : null,
+      steps: steps ? Number(steps) : null,
+      calories_in: caloriesIn ? Number(caloriesIn) : null,
+      calories_out: caloriesOut ? Number(caloriesOut) : null,
+      protein_g: protein ? Number(protein) : null,
+      carbs_g: carbs ? Number(carbs) : null,
+      fat_g: fat ? Number(fat) : null,
+      fibre_g: fibre ? Number(fibre) : null,
+      water_l: water ? Number(water) : null,
+      mood: mood ? Number(mood) : null,
+      stress: stress ? Number(stress) : null,
+      caffeine_mg: caffeine ? Number(caffeine) : null,
+      alcohol_units: alcohol ? Number(alcohol) : null,
+      sessions, period_today: periodToday, notes,
+    };
+    const { error } = await supabase.from('daily_logs').upsert(row, { onConflict: 'user_id,date' });
+
+    // First-log: stamp trial_started_at if not set
+    if (!error && !profile.trial_started_at) {
+      await supabase.from('profiles').update({ trial_started_at: new Date().toISOString() }).eq('user_id', profile.user_id);
+    }
+    if (!error && periodToday) {
+      await supabase.from('profiles').update({ last_period_start: date }).eq('user_id', profile.user_id);
+    }
+
+    setSaving(false);
+    if (error) { alert('Could not save: ' + error.message); return; }
+    setSavedAt(new Date());
+    onLogSaved();
+  }
+
+  return (
+    <div className="fade-in">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8, flexWrap: 'wrap', gap: 16 }}>
+        <div>
+          <h1 className="page-title">Daily log</h1>
+          <p className="page-sub">Fill what you can. Blanks won't break anything.</p>
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} style={{ width: 160 }} />
+          <button onClick={saveLog} disabled={saving} className="btn">
+            {saving ? 'Saving…' : savedAt ? '✓ Saved' : 'Save'}
+          </button>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, color: 'var(--teal)' }}>Body composition</h3>
+        <div className="row row-4">
+          <div><div className="field-label">Weight ({unit})</div><input type="number" step="0.1" className="input" value={weight} onChange={(e) => setWeight(e.target.value)} /></div>
+          <div><div className="field-label">Body fat %</div><input type="number" step="0.1" className="input" value={bodyFat} onChange={(e) => setBodyFat(e.target.value)} /></div>
+          <div><div className="field-label">Muscle ({unit})</div><input type="number" step="0.1" className="input" value={muscle} onChange={(e) => setMuscle(e.target.value)} /></div>
+          <div><div className="field-label">Body water %</div><input type="number" step="0.1" className="input" value={bodyWater} onChange={(e) => setBodyWater(e.target.value)} /></div>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, color: 'var(--teal)' }}>Recovery</h3>
+        <div className="row row-4">
+          <div><div className="field-label">HRV (ms)</div><input type="number" className="input" value={hrv} onChange={(e) => setHrv(e.target.value)} /></div>
+          <div><div className="field-label">RHR (bpm)</div><input type="number" className="input" value={rhr} onChange={(e) => setRhr(e.target.value)} /></div>
+          <div><div className="field-label">Sleep (hours)</div><input type="number" step="0.1" className="input" value={sleep} onChange={(e) => setSleep(e.target.value)} /></div>
+          <div><div className="field-label">Sleep quality (1-5)</div><input type="number" min="1" max="5" className="input" value={sleepQuality} onChange={(e) => setSleepQuality(e.target.value)} /></div>
+          <div><div className="field-label">Mood (1-5)</div><input type="number" min="1" max="5" className="input" value={mood} onChange={(e) => setMood(e.target.value)} /></div>
+          <div><div className="field-label">Stress (1-5)</div><input type="number" min="1" max="5" className="input" value={stress} onChange={(e) => setStress(e.target.value)} /></div>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, color: 'var(--teal)' }}>Nutrition</h3>
+        <div className="row row-4">
+          <div><div className="field-label">Calories in</div><input type="number" className="input" value={caloriesIn} onChange={(e) => setCaloriesIn(e.target.value)} /></div>
+          <div><div className="field-label">Calories out</div><input type="number" className="input" value={caloriesOut} onChange={(e) => setCaloriesOut(e.target.value)} /></div>
+          <div><div className="field-label">Protein (g)</div><input type="number" className="input" value={protein} onChange={(e) => setProtein(e.target.value)} /></div>
+          <div><div className="field-label">Carbs (g)</div><input type="number" className="input" value={carbs} onChange={(e) => setCarbs(e.target.value)} /></div>
+          <div><div className="field-label">Fat (g)</div><input type="number" className="input" value={fat} onChange={(e) => setFat(e.target.value)} /></div>
+          <div><div className="field-label">Fibre (g)</div><input type="number" className="input" value={fibre} onChange={(e) => setFibre(e.target.value)} /></div>
+          <div><div className="field-label">Water (L)</div><input type="number" step="0.1" className="input" value={water} onChange={(e) => setWater(e.target.value)} /></div>
+          <div><div className="field-label">Steps</div><input type="number" className="input" value={steps} onChange={(e) => setSteps(e.target.value)} /></div>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, color: 'var(--teal)' }}>Lifestyle</h3>
+        <div className="row row-4">
+          <div><div className="field-label">Caffeine (mg)</div><input type="number" className="input" value={caffeine} onChange={(e) => setCaffeine(e.target.value)} /></div>
+          <div><div className="field-label">Alcohol (units)</div><input type="number" step="0.5" className="input" value={alcohol} onChange={(e) => setAlcohol(e.target.value)} /></div>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--teal)' }}>Sessions</h3>
+          <button onClick={() => setShowAddSession(!showAddSession)} className="btn-ghost" style={{ padding: '6px 14px', fontSize: 12 }}>+ Add session</button>
+        </div>
+        {sessions.map((s, i) => (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px 100px 28px', gap: 10, alignItems: 'center', padding: '10px 0', borderBottom: i < sessions.length - 1 ? '1px dashed var(--divider)' : 'none' }}>
+            <span style={{ fontSize: 11, color: 'var(--text-mute)', letterSpacing: 1, textTransform: 'uppercase' }}>{s.timeOfDay}</span>
+            <span style={{ fontSize: 14, color: 'var(--text)', fontWeight: 500 }}>{s.type}</span>
+            <span style={{ fontSize: 13, color: 'var(--text-mute)' }}>{s.duration} min</span>
+            <span style={{ fontSize: 13, color: 'var(--text-mute)' }}>{s.rpe ? `RPE ${s.rpe}` : ''}</span>
+            <button onClick={() => setSessions(sessions.filter((_, j) => j !== i))} style={{ background: 'transparent', border: 'none', color: 'var(--text-mute)', fontSize: 18 }}>×</button>
+          </div>
+        ))}
+        {showAddSession && <AddSessionRow onAdd={(s) => { setSessions([...sessions, s]); setShowAddSession(false); }} onCancel={() => setShowAddSession(false)} />}
+        {!sessions.length && !showAddSession && (
+          <p style={{ fontSize: 13, color: 'var(--text-mute)', fontStyle: 'italic', padding: '8px 0' }}>
+            Add today's training — strength, walk, swim, football, anything.
+          </p>
+        )}
+      </div>
+
+      {profile.track_cycle && (
+        <div className="card" style={{ marginBottom: 14 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14 }}>
+            <input type="checkbox" checked={periodToday} onChange={(e) => setPeriodToday(e.target.checked)} style={{ width: 18, height: 18, accentColor: 'var(--pink)' }} />
+            Period started today
+          </label>
+          {periodToday && (
+            <p style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 6, marginLeft: 28 }}>
+              We'll reset your cycle day so phase guidance recalibrates from today.
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: 'var(--teal)' }}>Notes</h3>
+        <textarea rows="3" className="input" style={{ resize: 'vertical' }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="How did the day feel? Anything to remember?" />
+      </div>
+
+      <button onClick={saveLog} disabled={saving} className="btn" style={{ width: '100%', padding: 16, fontSize: 14 }}>
+        {saving ? 'Saving…' : savedAt ? '✓ Saved' : 'Save today'}
+      </button>
+    </div>
+  );
+}
+
+// ============================================================
+// CYCLE INSIGHTS
+// ============================================================
+function CycleInsights({ profile, logs }) {
+  const unit = profile.unit_system || 'kg';
+  let cycleDay = null;
+  let phase = null;
+  if (profile.track_cycle && profile.last_period_start) {
+    const days = daysBetween(parseYMD(profile.last_period_start), today());
+    if (days >= 0) {
+      cycleDay = (days % (profile.cycle_length || 28)) + 1;
+      phase = calcPhase(cycleDay, profile.cycle_length, profile.period_length);
+    }
+  }
+  const guide = phase ? PHASE_GUIDANCE[phase] : null;
+
+  // Phase averages (find which phase you do best in)
+  const phaseAvgs = useMemo(() => {
+    if (!profile.last_period_start) return null;
+    const out = { Menstrual: { weights: [], hrv: [] }, Follicular: { weights: [], hrv: [] }, Ovulatory: { weights: [], hrv: [] }, Luteal: { weights: [], hrv: [] } };
+    for (const l of logs) {
+      const d = daysBetween(parseYMD(profile.last_period_start), parseYMD(l.date));
+      if (d < 0) continue;
+      const cd = (d % (profile.cycle_length || 28)) + 1;
+      const p = calcPhase(cd, profile.cycle_length, profile.period_length);
+      if (!p) continue;
+      if (l.weight_kg) out[p].weights.push(l.weight_kg);
+      if (l.hrv) out[p].hrv.push(l.hrv);
+    }
+    return out;
+  }, [logs, profile]);
+
+  return (
+    <div className="fade-in">
+      <h1 className="page-title">Cycle insights</h1>
+      <p className="page-sub">How your body responds across your cycle.</p>
+
+      {!profile.track_cycle ? (
+        <div className="card">
+          <p style={{ fontSize: 14, color: 'var(--text-mute)' }}>Cycle tracking is off. Enable it in Settings to see this page.</p>
+        </div>
+      ) : !cycleDay ? (
+        <div className="card">
+          <p style={{ fontSize: 14, color: 'var(--text-mute)' }}>Add your last period start date in Settings to unlock cycle insights.</p>
+        </div>
+      ) : (
+        <>
+          <div className="card" style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h2 style={{ fontSize: 22, fontWeight: 600, color: 'var(--teal)' }}>{phase}</h2>
+              <span className="pill pill-pink">Day {cycleDay} of {profile.cycle_length || 28}</span>
+            </div>
+            <CycleBar cycleDay={cycleDay} cycleLen={profile.cycle_length || 28} periodLen={profile.period_length || 5} />
+          </div>
+
+          {guide && (
+            <div className="row row-3" style={{ marginBottom: 14 }}>
+              <div className="card">
+                <div className="label" style={{ color: 'var(--pink)' }}>Prioritize</div>
+                <p style={{ fontSize: 14, lineHeight: 1.6, marginTop: 8 }}>{guide.prioritize}</p>
+              </div>
+              <div className="card">
+                <div className="label" style={{ color: 'var(--pink)' }}>Train</div>
+                <p style={{ fontSize: 14, lineHeight: 1.6, marginTop: 8 }}>{guide.train}</p>
+              </div>
+              <div className="card">
+                <div className="label" style={{ color: 'var(--pink)' }}>Eat</div>
+                <p style={{ fontSize: 14, lineHeight: 1.6, marginTop: 8 }}>{guide.eat}</p>
+              </div>
+            </div>
+          )}
+
+          {phaseAvgs && (
+            <div className="card" style={{ marginBottom: 14 }}>
+              <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 14 }}>How you log across phases</h3>
+              <table>
+                <thead>
+                  <tr><th>Phase</th><th>Days logged</th><th>Avg weight ({unit})</th><th>Avg HRV (ms)</th></tr>
+                </thead>
+                <tbody>
+                  {Object.entries(phaseAvgs).map(([p, data]) => (
+                    <tr key={p}>
+                      <td style={{ fontWeight: 500, color: p === phase ? 'var(--teal)' : 'var(--text)' }}>{p}{p === phase ? ' · today' : ''}</td>
+                      <td>{Math.max(data.weights.length, data.hrv.length)}</td>
+                      <td>{data.weights.length ? fmt1(toDisplayWeight(data.weights.reduce((a,b)=>a+b,0)/data.weights.length, unit)) : '–'}</td>
+                      <td>{data.hrv.length ? fmt0(data.hrv.reduce((a,b)=>a+b,0)/data.hrv.length) : '–'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 12, fontStyle: 'italic' }}>
+                Patterns get more accurate after a couple of full cycles.
+              </p>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// WEIGHT TRENDS
+// ============================================================
+function WeightTrends({ profile, logs }) {
+  const unit = profile.unit_system || 'kg';
+
+  const last30 = useMemo(() => {
+    const out = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = ymd(new Date(today().getTime() - i * 86400000));
+      out.push(logs.find(l => l.date === d) || {});
+    }
+    return out;
+  }, [logs]);
+
+  const weights = last30.map(l => l.weight_kg ? toDisplayWeight(l.weight_kg, unit) : null);
+  const bf = last30.map(l => l.body_fat_pct || null);
+  const muscle = last30.map(l => l.muscle_kg ? toDisplayWeight(l.muscle_kg, unit) : null);
+  const water = last30.map(l => l.body_water_pct || null);
+
+  const w7 = avg(logs.slice(-7), 'weight_kg');
+  const w14 = avg(logs.slice(-14), 'weight_kg');
+  const w28 = avg(logs.slice(-28), 'weight_kg');
+  const startW = profile.start_weight_kg;
+
+  return (
+    <div className="fade-in">
+      <h1 className="page-title">Weight trends</h1>
+      <p className="page-sub">Daily weight is noise. Trends are signal.</p>
+
+      <div className="row row-4" style={{ marginBottom: 14 }}>
+        <div className="card">
+          <div className="label">Start</div>
+          <div className="stat-num-sm" style={{ marginTop: 8 }}>{startW ? fmt1(toDisplayWeight(startW, unit)) : '–'} <span style={{ fontSize: 12, color: 'var(--text-mute)' }}>{unit}</span></div>
+        </div>
+        <div className="card">
+          <div className="label">7-day avg</div>
+          <div className="stat-num-sm" style={{ marginTop: 8 }}>{w7 !== null ? fmt1(toDisplayWeight(w7, unit)) : '–'} <span style={{ fontSize: 12, color: 'var(--text-mute)' }}>{unit}</span></div>
+          {w7 !== null && startW && <div className="stat-sub" style={{ color: w7 <= startW ? 'var(--success)' : 'var(--text-mute)' }}>{fmt1(toDisplayWeight(w7 - startW, unit))} from start</div>}
+        </div>
+        <div className="card">
+          <div className="label">14-day avg</div>
+          <div className="stat-num-sm" style={{ marginTop: 8 }}>{w14 !== null ? fmt1(toDisplayWeight(w14, unit)) : '–'} <span style={{ fontSize: 12, color: 'var(--text-mute)' }}>{unit}</span></div>
+        </div>
+        <div className="card">
+          <div className="label">28-day avg</div>
+          <div className="stat-num-sm" style={{ marginTop: 8 }}>{w28 !== null ? fmt1(toDisplayWeight(w28, unit)) : '–'} <span style={{ fontSize: 12, color: 'var(--text-mute)' }}>{unit}</span></div>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div className="label" style={{ marginBottom: 4 }}>Weight × Body fat × Muscle · 30 days</div>
+        <ChartLegend items={[
+          { color: '#00687a', label: `Weight (${unit})` },
+          { color: '#ff5bcf', label: 'Body fat %' },
+          { color: '#cfff04', label: `Muscle (${unit})` },
+        ]} />
+        <div style={{ marginTop: 8 }}>
+          <MultiLineChart series={[
+            { values: weights, color: '#00687a', axis: 'left' },
+            { values: muscle, color: '#cfff04', axis: 'left' },
+            { values: bf, color: '#ff5bcf', axis: 'right' },
+          ]} h={220} />
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="label" style={{ marginBottom: 4 }}>Body water % · 30 days</div>
+        <p style={{ fontSize: 12, color: 'var(--text-mute)', marginBottom: 8 }}>Explains scale spikes — high water = high carb day, salt, or luteal retention.</p>
+        <MultiLineChart series={[{ values: water, color: '#00687a', axis: 'left' }]} h={140} />
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// RECOVERY & TRAINING
+// ============================================================
+function RecoveryView({ profile, logs }) {
+  const unit = profile.unit_system || 'kg';
+  const last14 = useMemo(() => {
+    const out = [];
+    for (let i = 13; i >= 0; i--) {
+      const d = ymd(new Date(today().getTime() - i * 86400000));
+      out.push(logs.find(l => l.date === d) || {});
+    }
+    return out;
+  }, [logs]);
+  const hrv14 = last14.map(l => l.hrv || null);
+  const rhr14 = last14.map(l => l.rhr || null);
+  const sleep14 = last14.map(l => l.sleep_hours || null);
+  const steps14 = last14.map(l => l.steps || null);
+  const calIn14 = last14.map(l => l.calories_in || null);
+  const calOut14 = last14.map(l => l.calories_out || null);
+
+  // Build correlations from real data
+  const insights = useMemo(() => {
+    const out = [];
+    if (logs.length < 7) return out;
+    const withSleep = logs.filter(l => l.sleep_hours && l.steps);
+    if (withSleep.length >= 5) {
+      const high = withSleep.filter(l => l.sleep_hours >= 7.5);
+      const low = withSleep.filter(l => l.sleep_hours < 7.5);
+      if (high.length && low.length) {
+        const diff = Math.round(avg(high, 'steps') - avg(low, 'steps'));
+        if (diff > 0) out.push({ headline: `+${diff.toLocaleString()} steps`, detail: 'on days you slept >7.5h', color: 'var(--success)' });
+      }
+    }
+    if (logs.length >= 5) {
+      const pairs = [];
+      for (let i = 0; i < logs.length - 1; i++) {
+        if (logs[i].protein_g && logs[i+1].weight_kg && logs[i].weight_kg) {
+          pairs.push({ protein: logs[i].protein_g, dw: logs[i+1].weight_kg - logs[i].weight_kg });
+        }
+      }
+      if (pairs.length >= 4) {
+        const target = profile.protein_target || 110;
+        const above = pairs.filter(p => p.protein >= target);
+        if (above.length >= 2) {
+          const avgDw = above.reduce((s, p) => s + p.dw, 0) / above.length;
+          if (avgDw < 0) out.push({ headline: `${fmt1(toDisplayWeight(avgDw, unit))} ${unit}`, detail: `morning after >${target}g protein`, color: 'var(--pink)' });
+        }
+      }
+    }
+    const alcLogs = logs.filter(l => l.alcohol_units !== null && l.alcohol_units !== undefined && l.hrv);
+    if (alcLogs.length >= 5) {
+      const drinking = alcLogs.filter(l => l.alcohol_units > 0);
+      const sober = alcLogs.filter(l => l.alcohol_units === 0);
+      if (drinking.length && sober.length) {
+        const drop = ((avg(sober, 'hrv') - avg(drinking, 'hrv')) / avg(sober, 'hrv')) * 100;
+        if (drop > 0) out.push({ headline: `−${Math.round(drop)}%`, detail: 'HRV on alcohol days', color: 'var(--danger)' });
+      }
+    }
+    const withMuscle = logs.filter(l => l.muscle_kg && l.weight_kg);
+    if (withMuscle.length >= 7) {
+      const first = withMuscle[0];
+      const last = withMuscle[withMuscle.length - 1];
+      const wChange = last.weight_kg - first.weight_kg;
+      const mChange = last.muscle_kg - first.muscle_kg;
+      if (wChange < -0.3 && mChange >= -0.2) {
+        out.push({ headline: 'Muscle stable', detail: `through ${fmt1(toDisplayWeight(wChange, unit))} ${unit} loss — winning`, color: 'var(--success)' });
+      }
+    }
+    return out;
+  }, [logs, profile, unit]);
+
+  const calIn7 = avg(logs.slice(-7), 'calories_in');
+  const calOut7 = avg(logs.slice(-7), 'calories_out');
+  const deficit = (calIn7 !== null && calOut7 !== null) ? calOut7 - calIn7 : null;
+
+  return (
+    <div className="fade-in">
+      <h1 className="page-title">Recovery & training</h1>
+      <p className="page-sub">What's helping you make progress.</p>
+
+      <div className="card-teal" style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 16 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 700, letterSpacing: 0.3 }}>What's working — last 14 days</h3>
+          <span style={{ fontSize: 10, opacity: 0.7 }}>more accurate with more data</span>
+        </div>
+        {insights.length === 0 ? (
+          <p style={{ fontSize: 13, opacity: 0.85, lineHeight: 1.6, fontStyle: 'italic' }}>
+            Patterns appear after about a week. Keep logging sleep, protein, HRV, and body comp — they'll surface here.
+          </p>
+        ) : (
+          <div className="row row-3">
+            {insights.map((it, i) => (
+              <div key={i} style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 12, padding: 14 }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: it.color, lineHeight: 1.1 }}>{it.headline}</div>
+                <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6, lineHeight: 1.4 }}>{it.detail}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="row row-2" style={{ marginBottom: 14 }}>
+        <div className="card">
+          <div className="label" style={{ marginBottom: 4 }}>HRV × RHR × Sleep · 14d</div>
+          <ChartLegend items={[
+            { color: '#00687a', label: 'HRV (ms)' },
+            { color: '#ff5bcf', label: 'RHR (bpm)' },
+            { color: '#cfff04', label: 'Sleep (h)' },
+          ]} />
+          <div style={{ marginTop: 6 }}>
+            <MultiLineChart series={[
+              { values: hrv14, color: '#00687a', axis: 'left' },
+              { values: rhr14, color: '#ff5bcf', axis: 'left' },
+              { values: sleep14, color: '#cfff04', axis: 'right' },
+            ]} />
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="label" style={{ marginBottom: 4 }}>Calories in × out · 14d</div>
+          <ChartLegend items={[
+            { color: '#ff5bcf', label: 'Calories in' },
+            { color: '#00687a', label: 'Calories out' },
+          ]} />
+          <div style={{ marginTop: 6 }}>
+            <MultiLineChart series={[
+              { values: calIn14, color: '#ff5bcf', axis: 'left' },
+              { values: calOut14, color: '#00687a', axis: 'left' },
+            ]} />
+          </div>
+          {deficit !== null && (
+            <p style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 8 }}>
+              Avg deficit: <strong style={{ color: 'var(--teal)' }}>{Math.round(deficit)} kcal/day</strong> from movement, no restriction.
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="label" style={{ marginBottom: 12 }}>Log history</div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ minWidth: 1100 }}>
+            <thead>
+              <tr>
+                {['Date', 'Wt', 'BF%', 'Muscle', 'Water%', 'Steps', 'HRV', 'RHR', 'Sleep', 'Cal In', 'Cal Out', 'Protein', 'Sessions'].map(h => <th key={h}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {logs.slice().reverse().slice(0, 60).map((r, i) => {
+                const sessSum = (r.sessions || []).map(s => `${s.type} ${s.duration}m`).join(' + ') || '–';
+                return (
+                  <tr key={i}>
+                    <td style={{ fontWeight: 500, color: 'var(--text)' }}>{r.date}</td>
+                    <td>{r.weight_kg ? fmt1(toDisplayWeight(r.weight_kg, unit)) : '–'}</td>
+                    <td>{r.body_fat_pct ?? '–'}</td>
+                    <td>{r.muscle_kg ? fmt1(toDisplayWeight(r.muscle_kg, unit)) : '–'}</td>
+                    <td>{r.body_water_pct ?? '–'}</td>
+                    <td>{r.steps ? r.steps.toLocaleString() : '–'}</td>
+                    <td>{r.hrv ?? '–'}</td>
+                    <td>{r.rhr ?? '–'}</td>
+                    <td>{r.sleep_hours ?? '–'}</td>
+                    <td>{r.calories_in ?? '–'}</td>
+                    <td>{r.calories_out ?? '–'}</td>
+                    <td>{r.protein_g ? `${r.protein_g}g` : '–'}</td>
+                    <td style={{ fontSize: 11 }}>{sessSum}</td>
+                  </tr>
+                );
+              })}
+              {logs.length === 0 && (
+                <tr><td colSpan={13} style={{ padding: 24, textAlign: 'center', color: 'var(--text-mute)', fontStyle: 'italic' }}>Nothing logged yet — head to Daily log to start.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// SETTINGS
+// ============================================================
+function SettingsView({ profile, onUpdate }) {
+  const [name, setName] = useState(profile.name || '');
+  const [unit, setUnit] = useState(profile.unit_system || 'kg');
+  const [lifeStage, setLifeStage] = useState(profile.life_stage || 'Perimenopause');
+  const [height, setHeight] = useState(profile.height_cm || '');
+  const [age, setAge] = useState(profile.age || '');
+  const [startWeight, setStartWeight] = useState(toDisplayWeight(profile.start_weight_kg, profile.unit_system) || '');
+  const [goalWeight, setGoalWeight] = useState(toDisplayWeight(profile.goal_weight_kg, profile.unit_system) || '');
+  const [goalDate, setGoalDate] = useState(profile.goal_date || '');
+  const [trackCycle, setTrackCycle] = useState(!!profile.track_cycle);
+  const [regularity, setRegularity] = useState(profile.cycle_regularity || 'Regular');
+  const [knowLength, setKnowLength] = useState(!!profile.cycle_length_auto);
+  const [lastPeriod, setLastPeriod] = useState(profile.last_period_start || '');
+  const [cycleLength, setCycleLength] = useState(profile.cycle_length || 28);
+  const [periodLength, setPeriodLength] = useState(profile.period_length || 5);
+  const [baselineSteps, setBaselineSteps] = useState(profile.baseline_steps || 8000);
+  const [proteinTarget, setProteinTarget] = useState(profile.protein_target || 110);
+  const [waterTarget, setWaterTarget] = useState(profile.water_target || 2.5);
+  const [sleepTarget, setSleepTarget] = useState(profile.sleep_target || 7.5);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState(null);
+
+  const isPeri = lifeStage === 'Perimenopause' || lifeStage === 'Post-menopause';
+  const hasCycles = !(regularity === 'None anymore');
+
+  async function save() {
+    setSaving(true);
+    const patch = {
+      name, unit_system: unit, life_stage: lifeStage,
+      height_cm: height ? Number(height) : null,
+      age: age ? Number(age) : null,
+      start_weight_kg: fromDisplayWeight(startWeight, unit),
+      goal_weight_kg: fromDisplayWeight(goalWeight, unit),
+      goal_date: goalDate || null,
+      track_cycle: trackCycle && hasCycles,
+      cycle_regularity: trackCycle ? regularity : null,
+      cycle_length_auto: knowLength,
+      last_period_start: lastPeriod || null,
+      cycle_length: Number(cycleLength),
+      period_length: Number(periodLength),
+      baseline_steps: Number(baselineSteps),
+      protein_target: Number(proteinTarget),
+      water_target: Number(waterTarget),
+      sleep_target: Number(sleepTarget),
+    };
+    const { error } = await supabase.from('profiles').update(patch).eq('user_id', profile.user_id);
+    setSaving(false);
+    if (error) { alert(error.message); return; }
+    setSavedAt(new Date());
+    onUpdate();
+  }
+
+  return (
+    <div className="fade-in">
+      <h1 className="page-title">Settings</h1>
+      <p className="page-sub">Update once. The dashboard adapts.</p>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, color: 'var(--teal)' }}>About you</h3>
+        <div className="row row-2">
+          <div><div className="field-label">Name</div><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></div>
+          <div><div className="field-label">Life stage</div>
+            <select className="input" value={lifeStage} onChange={(e) => setLifeStage(e.target.value)}>
+              <option>Pre-menopause</option><option>Perimenopause</option><option>Post-menopause</option>
+            </select>
+          </div>
+          <div><div className="field-label">Height (cm)</div><input type="number" className="input" value={height} onChange={(e) => setHeight(e.target.value)} /></div>
+          <div><div className="field-label">Age</div><input type="number" className="input" value={age} onChange={(e) => setAge(e.target.value)} /></div>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, color: 'var(--teal)' }}>Units</h3>
+        <div style={{ display: 'flex', gap: 8, maxWidth: 280 }}>
+          <PillBtn active={unit === 'kg'} onClick={() => setUnit('kg')}>kg</PillBtn>
+          <PillBtn active={unit === 'lbs'} onClick={() => setUnit('lbs')}>lbs</PillBtn>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, color: 'var(--teal)' }}>Goal</h3>
+        <div className="row row-3">
+          <div><div className="field-label">Start weight ({unit})</div><input type="number" step="0.1" className="input" value={startWeight} onChange={(e) => setStartWeight(e.target.value)} /></div>
+          <div><div className="field-label">Goal weight ({unit})</div><input type="number" step="0.1" className="input" value={goalWeight} onChange={(e) => setGoalWeight(e.target.value)} /></div>
+          <div><div className="field-label">Deadline</div><input type="date" className="input" value={goalDate} onChange={(e) => setGoalDate(e.target.value)} /></div>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, color: 'var(--teal)' }}>Cycle</h3>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <input type="checkbox" checked={trackCycle} onChange={(e) => setTrackCycle(e.target.checked)} style={{ width: 16, height: 16, accentColor: 'var(--teal)' }} />
+          <span style={{ fontSize: 14 }}>Track cycle</span>
+        </label>
+
+        {trackCycle && (
+          <>
+            {isPeri && (
+              <div style={{ marginBottom: 14 }}>
+                <div className="field-label">Are your cycles regular?</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <PillBtn active={regularity === 'Regular'} onClick={() => setRegularity('Regular')}>Regular</PillBtn>
+                  <PillBtn active={regularity === 'Irregular'} onClick={() => setRegularity('Irregular')}>Irregular</PillBtn>
+                  {lifeStage === 'Post-menopause' && (
+                    <PillBtn active={regularity === 'None anymore'} onClick={() => setRegularity('None anymore')}>None anymore</PillBtn>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {hasCycles && (
+              <>
+                <div className="row row-3" style={{ marginBottom: 10 }}>
+                  <div><div className="field-label">Last period start</div><input type="date" className="input" value={lastPeriod} onChange={(e) => setLastPeriod(e.target.value)} /></div>
+                  <div><div className="field-label">Cycle length</div><input type="number" className="input" value={cycleLength} onChange={(e) => setCycleLength(e.target.value)} disabled={knowLength} /></div>
+                  <div><div className="field-label">Period length</div><input type="number" className="input" value={periodLength} onChange={(e) => setPeriodLength(e.target.value)} /></div>
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-mute)' }}>
+                  <input type="checkbox" checked={knowLength} onChange={(e) => setKnowLength(e.target.checked)} style={{ width: 14, height: 14, accentColor: 'var(--teal)' }} />
+                  I don't know — track it for me
+                </label>
+              </>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="card" style={{ marginBottom: 22 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, color: 'var(--teal)' }}>Daily targets</h3>
+        <div className="row row-4">
+          <div><div className="field-label">Steps</div><input type="number" className="input" value={baselineSteps} onChange={(e) => setBaselineSteps(e.target.value)} /></div>
+          <div><div className="field-label">Protein (g)</div><input type="number" className="input" value={proteinTarget} onChange={(e) => setProteinTarget(e.target.value)} /></div>
+          <div><div className="field-label">Water (L)</div><input type="number" step="0.1" className="input" value={waterTarget} onChange={(e) => setWaterTarget(e.target.value)} /></div>
+          <div><div className="field-label">Sleep (hrs)</div><input type="number" step="0.1" className="input" value={sleepTarget} onChange={(e) => setSleepTarget(e.target.value)} /></div>
+        </div>
+      </div>
+
+      <button onClick={save} disabled={saving} className="btn" style={{ width: '100%', padding: 14 }}>
+        {saving ? 'Saving…' : savedAt ? '✓ Saved' : 'Save changes'}
+      </button>
+    </div>
+  );
+}
+
+// ============================================================
+// APP ROOT
+// ============================================================
+function App() {
+  const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState(null);
+  const [logs, setLogs] = useState([]);
+  const [view, setView] = useState('dashboard');
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setLoading(false); });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => setSession(session));
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  const loadData = useCallback(async () => {
+    if (!session) return;
+    const { data: prof } = await supabase.from('profiles').select('*').eq('user_id', session.user.id).maybeSingle();
+    setProfile(prof);
+    const { data: logRows } = await supabase.from('daily_logs').select('*').eq('user_id', session.user.id).order('date', { ascending: true });
+    setLogs(logRows || []);
+  }, [session]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  async function signOut() {
+    await supabase.auth.signOut();
+    setSession(null); setProfile(null); setLogs([]);
+  }
+
+  if (loading) return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: 'var(--text-mute)', fontStyle: 'italic' }}>loading…</div>;
+  if (!session) return <AuthScreen />;
+  if (!profile) return <Onboarding user={session.user} onDone={loadData} />;
+
+  const todayLog = logs.find(l => l.date === ymd(today()));
+
+  // Trial calc — counts from trial_started_at if set, otherwise null (trial hasn't started yet)
+  let trialDaysLeft = null;
+  if (profile.trial_started_at) {
+    const elapsed = daysBetween(new Date(profile.trial_started_at), today());
+    trialDaysLeft = Math.max(0, TRIAL_DAYS - elapsed);
+  }
+  const isPaid = !!profile.is_paid;
+
+  return (
+    <div className="layout">
+      <Sidebar view={view} setView={setView} profile={profile} onSignOut={signOut} trialDaysLeft={trialDaysLeft} isPaid={isPaid} />
+      <main className="main">
+        {view === 'dashboard' && <Dashboard profile={profile} logs={logs} todayLog={todayLog} setView={setView} />}
+        {view === 'log' && <DailyLog profile={profile} todayLog={todayLog} onLogSaved={loadData} />}
+        {view === 'cycle' && <CycleInsights profile={profile} logs={logs} />}
+        {view === 'trends' && <WeightTrends profile={profile} logs={logs} />}
+        {view === 'recovery' && <RecoveryView profile={profile} logs={logs} />}
+        {view === 'settings' && <SettingsView profile={profile} onUpdate={loadData} />}
+      </main>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
