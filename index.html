@@ -353,6 +353,98 @@ function todaysFocus({ recovery, phase, todayLog, profile, baselines }) {
 }
 
 // ============================================================
+// WHAT CHANGED — what moved since yesterday/7-day avg, what's missing
+// Shows on dashboard on arrival so user knows what's new
+// ============================================================
+function whatChanged(logs, profile, todayLog) {
+  const unit = profile.unit_system || 'kg';
+  const out = { moved: [], missing: [] };
+  if (logs.length < 2) return out;
+
+  const sorted = logs.slice().sort((a, b) => a.date.localeCompare(b.date));
+  const recent7 = sorted.slice(-7);
+  const yesterday = sorted[sorted.length - (todayLog ? 2 : 1)];
+  const latest = todayLog || sorted[sorted.length - 1];
+
+  // Weight change vs 7-day avg
+  if (latest?.weight_kg) {
+    const w7 = avg(recent7.filter(l => l.weight_kg && l.date !== latest.date), 'weight_kg');
+    if (w7 !== null) {
+      const diff = latest.weight_kg - w7;
+      if (Math.abs(diff) >= 0.2) {
+        out.moved.push({
+          headline: `Weight ${diff < 0 ? 'down' : 'up'} ${fmt1(toDisplayWeight(Math.abs(diff), unit))} ${weightUnit(unit)}`,
+          detail: `vs your 7-day average. ${Math.abs(diff) > 0.8 ? 'Likely water (sodium, carbs, luteal) — not fat.' : 'Within normal daily variation.'}`,
+          tone: diff < 0 ? 'good' : 'neutral',
+        });
+      }
+    }
+  }
+
+  // HRV change vs baseline
+  if (latest?.hrv) {
+    const hrv7 = avg(recent7.filter(l => l.hrv && l.date !== latest.date), 'hrv');
+    if (hrv7 !== null) {
+      const diff = latest.hrv - hrv7;
+      if (Math.abs(diff) >= 4) {
+        let reason = '';
+        if (diff < 0) {
+          if (latest.alcohol_units > 0) reason = ` — alcohol last night.`;
+          else if (latest.sleep_hours && latest.sleep_hours < 7) reason = ` — sleep was ${fmt1(latest.sleep_hours)}h.`;
+          else if (latest.stress >= 4) reason = ` — stress was high.`;
+        }
+        out.moved.push({
+          headline: `HRV ${diff < 0 ? 'down' : 'up'} ${Math.abs(Math.round(diff))}ms`,
+          detail: `vs your 7-day average${reason}`,
+          tone: diff > 0 ? 'good' : 'warn',
+        });
+      }
+    }
+  }
+
+  // Sleep change
+  if (latest?.sleep_hours) {
+    const sleep7 = avg(recent7.filter(l => l.sleep_hours && l.date !== latest.date), 'sleep_hours');
+    if (sleep7 !== null) {
+      const diff = latest.sleep_hours - sleep7;
+      if (Math.abs(diff) >= 0.7) {
+        out.moved.push({
+          headline: `Sleep ${diff > 0 ? 'up' : 'down'} ${fmt1(Math.abs(diff))}h`,
+          detail: `${fmt1(latest.sleep_hours)}h vs ${fmt1(sleep7)}h average.`,
+          tone: diff > 0 ? 'good' : 'warn',
+        });
+      }
+    }
+  }
+
+  // Streak warnings — consecutive missed targets
+  const last3 = sorted.slice(-3);
+  if (last3.length >= 3 && profile.protein_target) {
+    const allMissed = last3.every(l => l.protein_g && l.protein_g < profile.protein_target);
+    if (allMissed) {
+      out.moved.push({
+        headline: `3rd day under protein`,
+        detail: `In peri, this is the lever that protects muscle through loss.`,
+        tone: 'warn',
+      });
+    }
+  }
+
+  // What's MISSING — fields not logged recently
+  const checkField = (key, label, gap = 2) => {
+    const last = sorted.slice(-gap).filter(l => l[key] !== null && l[key] !== undefined && l[key] !== '');
+    if (last.length === 0 && sorted.length >= gap) {
+      out.missing.push(label);
+    }
+  };
+  checkField('weight_kg', 'weight', 2);
+  checkField('hrv', 'HRV', 3);
+  checkField('sleep_hours', 'sleep', 2);
+
+  return out;
+}
+
+// ============================================================
 // INSIGHTS ENGINE — finds patterns in user data, returns plain-English findings
 // Each pattern checks: enough data? signal strong enough? Then formats output.
 // ============================================================
@@ -1085,6 +1177,7 @@ function Dashboard({ profile, logs, todayLog, setView }) {
 
   const focus = todaysFocus({ recovery, phase, todayLog, profile, baselines });
   const progress = progressStatus(logs, profile);
+  const changes = whatChanged(logs, profile, todayLog);
 
   return (
     <div className="fade-in">
@@ -1137,6 +1230,40 @@ function Dashboard({ profile, logs, todayLog, setView }) {
           </p>
         )}
       </div>
+
+      {/* What changed + What's missing — on-arrival summary */}
+      {(changes.moved.length > 0 || changes.missing.length > 0) && (
+        <div className="row row-2" style={{ marginBottom: 16 }}>
+          {changes.moved.length > 0 && (
+            <div className="card">
+              <div className="label" style={{ marginBottom: 12 }}>What changed</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {changes.moved.slice(0, 4).map((m, i) => {
+                  const dotColor = m.tone === 'good' ? 'var(--success)' : m.tone === 'warn' ? 'var(--warn)' : 'var(--text-mute)';
+                  return (
+                    <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: dotColor, marginTop: 7, flexShrink: 0 }} />
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{m.headline}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 2, lineHeight: 1.5 }}>{m.detail}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {changes.missing.length > 0 && (
+            <div className="card" style={{ background: 'var(--surface-2)' }}>
+              <div className="label" style={{ marginBottom: 12, color: 'var(--text-mute)' }}>Missing data</div>
+              <p style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.6, marginBottom: 12 }}>
+                You haven't logged <strong>{changes.missing.join(', ')}</strong> recently. Adding these will improve recovery score accuracy.
+              </p>
+              <button onClick={() => setView('log')} className="btn-ghost" style={{ padding: '8px 16px', fontSize: 12 }}>Open daily log</button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Key metrics row */}
       <div className="row row-5" style={{ marginBottom: 16 }}>
@@ -1238,7 +1365,7 @@ function Dashboard({ profile, logs, todayLog, setView }) {
 // ============================================================
 // DAILY LOG (full page, own tab)
 // ============================================================
-function DailyLog({ profile, todayLog, onLogSaved }) {
+function DailyLog({ profile, logs, todayLog, onLogSaved }) {
   const unit = profile.unit_system || 'kg';
   const [date, setDate] = useState(ymd(today()));
   const [weight, setWeight] = useState('');
@@ -1268,32 +1395,59 @@ function DailyLog({ profile, todayLog, onLogSaved }) {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
 
+  // Find the log for the currently selected date (could be today, yesterday, or any backdate)
+  const selectedLog = useMemo(() => logs.find(l => l.date === date), [logs, date]);
+
+  // Last 7 days for the quick-pick row
+  const recentDays = useMemo(() => {
+    const out = [];
+    for (let i = 0; i < 7; i++) {
+      const d = ymd(new Date(today().getTime() - i * 86400000));
+      const log = logs.find(l => l.date === d);
+      out.push({ date: d, log, hasData: !!log });
+    }
+    return out;
+  }, [logs]);
+
   useEffect(() => {
-    if (!todayLog) return;
-    setWeight(todayLog.weight_kg ? fmt1(toDisplayWeight(todayLog.weight_kg, unit)) : '');
-    setBodyFat(todayLog.body_fat_pct || '');
-    setMuscle(todayLog.muscle_kg ? fmt1(toDisplayWeight(todayLog.muscle_kg, unit)) : '');
-    setBodyWater(todayLog.body_water_pct || '');
-    setHrv(todayLog.hrv || '');
-    setRhr(todayLog.rhr || '');
-    setSleep(todayLog.sleep_hours || '');
-    setSleepQuality(todayLog.sleep_quality || '');
-    setSteps(todayLog.steps || '');
-    setCaloriesIn(todayLog.calories_in || '');
-    setCaloriesOut(todayLog.calories_out || '');
-    setProtein(todayLog.protein_g || '');
-    setCarbs(todayLog.carbs_g || '');
-    setFat(todayLog.fat_g || '');
-    setFibre(todayLog.fibre_g || '');
-    setWater(todayLog.water_l ? fmt1(toDisplayWater(todayLog.water_l, unit)) : '');
-    setMood(todayLog.mood || '');
-    setStress(todayLog.stress || '');
-    setCaffeine(todayLog.caffeine_mg ? (todayLog.caffeine_mg / 95).toFixed(1) : '');
-    setAlcohol(todayLog.alcohol_units || '');
-    setSessions(todayLog.sessions || []);
-    setPeriodToday(!!todayLog.period_today);
-    setNotes(todayLog.notes || '');
-  }, [todayLog, unit]);
+    // Reload form whenever the selected date changes or its log changes
+    const src = selectedLog;
+    if (!src) {
+      // Clear form for empty dates
+      setWeight(''); setBodyFat(''); setMuscle(''); setBodyWater('');
+      setHrv(''); setRhr(''); setSleep(''); setSleepQuality('');
+      setSteps(''); setCaloriesIn(''); setCaloriesOut(''); setProtein('');
+      setCarbs(''); setFat(''); setFibre(''); setWater('');
+      setMood(''); setStress(''); setCaffeine(''); setAlcohol('');
+      setSessions([]); setPeriodToday(false); setNotes('');
+      setSavedAt(null);
+      return;
+    }
+    setWeight(src.weight_kg ? fmt1(toDisplayWeight(src.weight_kg, unit)) : '');
+    setBodyFat(src.body_fat_pct || '');
+    setMuscle(src.muscle_kg ? fmt1(toDisplayWeight(src.muscle_kg, unit)) : '');
+    setBodyWater(src.body_water_pct || '');
+    setHrv(src.hrv || '');
+    setRhr(src.rhr || '');
+    setSleep(src.sleep_hours || '');
+    setSleepQuality(src.sleep_quality || '');
+    setSteps(src.steps || '');
+    setCaloriesIn(src.calories_in || '');
+    setCaloriesOut(src.calories_out || '');
+    setProtein(src.protein_g || '');
+    setCarbs(src.carbs_g || '');
+    setFat(src.fat_g || '');
+    setFibre(src.fibre_g || '');
+    setWater(src.water_l ? fmt1(toDisplayWater(src.water_l, unit)) : '');
+    setMood(src.mood || '');
+    setStress(src.stress || '');
+    setCaffeine(src.caffeine_mg ? (src.caffeine_mg / 95).toFixed(1) : '');
+    setAlcohol(src.alcohol_units || '');
+    setSessions(src.sessions || []);
+    setPeriodToday(!!src.period_today);
+    setNotes(src.notes || '');
+    setSavedAt(null);
+  }, [selectedLog, unit, date]);
 
   async function saveLog() {
     setSaving(true);
@@ -1339,17 +1493,59 @@ function DailyLog({ profile, todayLog, onLogSaved }) {
 
   return (
     <div className="fade-in">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8, flexWrap: 'wrap', gap: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, flexWrap: 'wrap', gap: 16 }}>
         <div>
           <h1 className="page-title">Daily log</h1>
-          <p className="page-sub">Fill what you can. Blanks won't break anything.</p>
+          <p className="page-sub">Fill what you can — come back later to add more.</p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} style={{ width: 160 }} />
+          <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} style={{ width: 170 }} max={ymd(today())} />
           <button onClick={saveLog} disabled={saving} className="btn">
             {saving ? 'Saving…' : savedAt ? '✓ Saved' : 'Save'}
           </button>
         </div>
+      </div>
+
+      {/* Quick pick: last 7 days */}
+      <div className="card" style={{ marginBottom: 14, padding: 14 }}>
+        <div className="label" style={{ marginBottom: 10 }}>Jump to a day</div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {recentDays.map((d, i) => {
+            const dt = parseYMD(d.date);
+            const isSelected = d.date === date;
+            const isToday = d.date === ymd(today());
+            const dayName = isToday ? 'Today' : i === 1 ? 'Yest' : dt.toLocaleDateString('en-GB', { weekday: 'short' });
+            const dayNum = dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+            return (
+              <button
+                key={d.date}
+                onClick={() => setDate(d.date)}
+                style={{
+                  flex: '1 1 auto',
+                  minWidth: 78,
+                  padding: '10px 8px',
+                  borderRadius: 10,
+                  border: `1px solid ${isSelected ? 'var(--teal)' : 'var(--border)'}`,
+                  background: isSelected ? 'var(--teal)' : 'white',
+                  color: isSelected ? 'white' : 'var(--text)',
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  position: 'relative',
+                }}
+              >
+                <div style={{ fontSize: 11, opacity: isSelected ? 0.85 : 0.6, marginBottom: 2 }}>{dayName}</div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{dayNum}</div>
+                {d.hasData && (
+                  <div style={{ position: 'absolute', top: 6, right: 8, width: 6, height: 6, borderRadius: '50%', background: isSelected ? 'var(--gold)' : 'var(--success)' }} />
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <p style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 10, textAlign: 'center' }}>
+          <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--success)', marginRight: 4, verticalAlign: 'middle' }} />
+          dot = data logged · need to go further back? use the date picker above
+        </p>
       </div>
 
       <div className="card" style={{ marginBottom: 14 }}>
@@ -2018,7 +2214,7 @@ function App() {
       <Sidebar view={view} setView={setView} profile={profile} onSignOut={signOut} trialDaysLeft={trialDaysLeft} isPaid={isPaid} />
       <main className="main">
         {view === 'dashboard' && <Dashboard profile={profile} logs={logs} todayLog={todayLog} setView={setView} />}
-        {view === 'log' && <DailyLog profile={profile} todayLog={todayLog} onLogSaved={loadData} />}
+        {view === 'log' && <DailyLog profile={profile} logs={logs} todayLog={todayLog} onLogSaved={loadData} />}
         {view === 'cycle' && <CycleInsights profile={profile} logs={logs} />}
         {view === 'trends' && <WeightTrends profile={profile} logs={logs} />}
         {view === 'recovery' && <RecoveryView profile={profile} logs={logs} />}
