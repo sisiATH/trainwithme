@@ -12,9 +12,9 @@
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 <script>
-  window.SUPABASE_URL      = "https://klkvzcttjlvbilqeeoyj.supabase.co ";
-  window.SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtsa3Z6Y3R0amx2YmlscWVlb3lqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4Nzc1MzAsImV4cCI6MjA5NDQ1MzUzMH0.F8cd-GilNryRSDN-aKwNenOmF9pZbC1SSXUjSkauWmE";
-  window.STRIPE_PAYMENT_LINK = "https://buy.stripe.com/9B628raNX9wlgIjbzyco000";
+  window.SUPABASE_URL      = "PASTE_YOUR_SUPABASE_URL_HERE";
+  window.SUPABASE_ANON_KEY = "PASTE_YOUR_SUPABASE_ANON_KEY_HERE";
+  window.STRIPE_PAYMENT_LINK = "PASTE_YOUR_STRIPE_PAYMENT_LINK_HERE";
 </script>
 <style>
   :root {
@@ -155,6 +155,35 @@ const fromDisplayWeight = (val, unit) => {
   return unit === 'lbs' ? n / 2.20462 : n;
 };
 
+// Unit system helpers (Metric = kg/cm/L, Imperial = lbs/in/fl oz)
+const isImperial = (unit) => unit === 'lbs' || unit === 'imperial';
+const weightUnit = (unit) => isImperial(unit) ? 'lbs' : 'kg';
+const heightUnit = (unit) => isImperial(unit) ? 'in' : 'cm';
+const waterUnit  = (unit) => isImperial(unit) ? 'fl oz' : 'L';
+
+const toDisplayHeight = (cm, unit) => {
+  if (cm === null || cm === undefined || cm === '') return null;
+  return isImperial(unit) ? cm / 2.54 : cm;
+};
+const fromDisplayHeight = (val, unit) => {
+  if (val === null || val === undefined || val === '') return null;
+  const n = Number(val);
+  if (isNaN(n)) return null;
+  return isImperial(unit) ? n * 2.54 : n;
+};
+
+// Water stored in litres; imperial displays as fl oz (1 L = 33.814 fl oz)
+const toDisplayWater = (L, unit) => {
+  if (L === null || L === undefined || L === '') return null;
+  return isImperial(unit) ? L * 33.814 : L;
+};
+const fromDisplayWater = (val, unit) => {
+  if (val === null || val === undefined || val === '') return null;
+  const n = Number(val);
+  if (isNaN(n)) return null;
+  return isImperial(unit) ? n / 33.814 : n;
+};
+
 function calcPhase(cycleDay, cycleLength, periodLength) {
   if (!cycleDay || !cycleLength) return null;
   if (cycleDay <= (periodLength || 5)) return 'Menstrual';
@@ -234,6 +263,378 @@ const PHASE_GUIDANCE = {
     eat: '+15% carbs. 30g fibre. Eat the extra food — appetite is hormonal, not failure.',
   },
 };
+
+// ============================================================
+// UNIFIED "TODAY'S FOCUS" — combines recovery + phase + today's data
+// Returns ONE coherent recommendation, never contradictory
+// ============================================================
+function todaysFocus({ recovery, phase, todayLog, profile, baselines }) {
+  // No data at all
+  if (!todayLog && recovery === null) {
+    return {
+      headline: 'Set your baseline.',
+      detail: 'Log today\'s sleep, HRV, weight and steps. Your first signal appears in 2-3 days.',
+      action: phase ? `${phase} phase, day ${todayLog?.cycle_day || ''} — guidance on the right.` : null,
+    };
+  }
+
+  // Recovery is the strongest signal — it overrides phase
+  if (recovery !== null && recovery < 0.9) {
+    return {
+      headline: 'Recovery is low. Rest or walk only today.',
+      detail: phase
+        ? `Your HRV is below baseline. ${phase} phase guidance suggests ${PHASE_GUIDANCE[phase].prioritize.toLowerCase()} — but recovery wins. Push tomorrow if numbers improve.`
+        : 'Your HRV is below baseline. Skip intensity. Walk, mobilise, sleep early.',
+      action: 'Aim for 7,000-8,000 steps. No HIIT, no heavy lifts.',
+    };
+  }
+
+  // Recovery is high and phase supports intensity
+  if (recovery !== null && recovery >= 1.05 && (phase === 'Follicular' || phase === 'Ovulatory')) {
+    return {
+      headline: 'You\'re recovered and in your strong window. Train hard.',
+      detail: phase === 'Ovulatory'
+        ? 'Ovulation: peak strength but watch ACL/knee stability. Form before load.'
+        : 'Follicular: best week for PRs and intensity. Estrogen is on your side.',
+      action: 'Heavy lifts, intervals, or sprint work today. Eat the food to fuel it.',
+    };
+  }
+
+  // Recovery is high but phase is luteal — moderate intensity
+  if (recovery !== null && recovery >= 1.05 && phase === 'Luteal') {
+    return {
+      headline: 'Recovered but luteal — choose volume over intensity.',
+      detail: 'HRV is good, but progesterone makes hard sessions harder to recover from. Zone 2 cardio or moderate strength beats HIIT here.',
+      action: '+15% carbs around training. Magnesium tonight.',
+    };
+  }
+
+  // Recovery is high and menstrual — gentle
+  if (recovery !== null && recovery >= 1.05 && phase === 'Menstrual') {
+    return {
+      headline: 'Your body wants gentle movement, not intensity.',
+      detail: 'First few days of bleed: walking, yoga, mobility. Iron is dropping — fuel it.',
+      action: 'Red meat or lentils today. Extra 500ml water.',
+    };
+  }
+
+  // Steady recovery — generic per-phase
+  if (recovery !== null && phase) {
+    return {
+      headline: `Steady day. ${phase} guidance applies.`,
+      detail: PHASE_GUIDANCE[phase].prioritize,
+      action: PHASE_GUIDANCE[phase].train,
+    };
+  }
+
+  // Has recovery but no phase
+  if (recovery !== null) {
+    return {
+      headline: recovery >= 1.05 ? 'You\'re recovered. Push today.' : 'Steady day. Stick to the plan.',
+      detail: 'Add cycle tracking in Settings for personalised phase-aware guidance.',
+      action: null,
+    };
+  }
+
+  // Has phase but not enough HRV/RHR baseline yet
+  if (phase) {
+    return {
+      headline: `${phase} phase — here's what helps.`,
+      detail: PHASE_GUIDANCE[phase].prioritize,
+      action: `Keep logging HRV and RHR — recovery score appears once we have your baseline (~7 days).`,
+    };
+  }
+
+  return {
+    headline: 'Keep logging.',
+    detail: 'A few more days of data and the dashboard starts personalising.',
+    action: null,
+  };
+}
+
+// ============================================================
+// INSIGHTS ENGINE — finds patterns in user data, returns plain-English findings
+// Each pattern checks: enough data? signal strong enough? Then formats output.
+// ============================================================
+function generateInsights(logs, profile) {
+  const insights = { gaps: [], wins: [], stalls: [], cycle: [] };
+  const unit = profile.unit_system || 'kg';
+
+  if (logs.length < 3) return insights;
+
+  // ============ BEHAVIOUR GAPS (what you're not doing) ============
+  const recent = logs.slice(-7);
+  const recent14 = logs.slice(-14);
+
+  // Water gap
+  const waterAvg = avg(recent, 'water_l');
+  if (waterAvg !== null && profile.water_target && waterAvg < profile.water_target * 0.7) {
+    const gap = profile.water_target - waterAvg;
+    insights.gaps.push({
+      headline: `Water is low.`,
+      detail: `Averaging ${fmt1(toDisplayWater(waterAvg, unit))} ${waterUnit(unit)}/day, target ${fmt1(toDisplayWater(profile.water_target, unit))} ${waterUnit(unit)}. ${isImperial(unit) ? '3 large glasses' : '500ml'} before noon closes most of the gap.`,
+    });
+  }
+
+  // Sleep gap
+  const sleepAvg = avg(recent, 'sleep_hours');
+  if (sleepAvg !== null && sleepAvg < 7) {
+    insights.gaps.push({
+      headline: `Sleep is short.`,
+      detail: `Averaging ${fmt1(sleepAvg)}h. Sleep under 7h is the single strongest predictor of low NEAT the next day in your data.`,
+    });
+  }
+
+  // Protein gap
+  const proteinDays = recent.filter(l => l.protein_g);
+  if (proteinDays.length >= 3 && profile.protein_target) {
+    const hit = proteinDays.filter(l => l.protein_g >= profile.protein_target).length;
+    if (hit < proteinDays.length / 2) {
+      insights.gaps.push({
+        headline: `Protein target missed.`,
+        detail: `Hit ${profile.protein_target}g on ${hit} of ${proteinDays.length} logged days. In peri, protein protects muscle through fat loss — non-negotiable.`,
+      });
+    }
+  }
+
+  // Step gap
+  const stepAvg = avg(recent, 'steps');
+  if (stepAvg !== null && profile.baseline_steps && stepAvg < profile.baseline_steps * 0.8) {
+    insights.gaps.push({
+      headline: `Steps dropped.`,
+      detail: `Averaging ${fmt0(stepAvg)}/day, ${Math.round((1 - stepAvg/profile.baseline_steps) * 100)}% below your baseline. NEAT is where the deficit lives — not the gym.`,
+    });
+  }
+
+  // ============ WHAT WORKS FOR YOU (correlations from your data) ============
+
+  // Sleep → steps
+  const sleepStepLogs = logs.filter(l => l.sleep_hours && l.steps);
+  if (sleepStepLogs.length >= 5) {
+    const high = sleepStepLogs.filter(l => l.sleep_hours >= 7.5);
+    const low = sleepStepLogs.filter(l => l.sleep_hours < 7.5);
+    if (high.length >= 2 && low.length >= 2) {
+      const diff = Math.round(avg(high, 'steps') - avg(low, 'steps'));
+      if (diff > 500) insights.wins.push({
+        headline: `+${diff.toLocaleString()} steps on well-rested days`,
+        detail: `When you sleep ≥7.5h, you walk ${Math.round(diff/avg(low, 'steps')*100)}% more the next day. Sleep is your NEAT lever.`,
+      });
+    }
+  }
+
+  // Calories out → next-day weight (TESTS YOUR THEORY DIRECTLY)
+  const calWeightPairs = [];
+  for (let i = 0; i < logs.length - 1; i++) {
+    if (logs[i].calories_out && logs[i+1].weight_kg && logs[i].weight_kg) {
+      calWeightPairs.push({ cal: logs[i].calories_out, dw: logs[i+1].weight_kg - logs[i].weight_kg });
+    }
+  }
+  if (calWeightPairs.length >= 5) {
+    // Find the threshold where weight moves
+    for (const threshold of [2400, 2300, 2200, 2100, 2000]) {
+      const above = calWeightPairs.filter(p => p.cal >= threshold);
+      const below = calWeightPairs.filter(p => p.cal < threshold);
+      if (above.length >= 2 && below.length >= 2) {
+        const aboveDw = above.reduce((s,p) => s+p.dw, 0) / above.length;
+        const belowDw = below.reduce((s,p) => s+p.dw, 0) / below.length;
+        if (aboveDw < -0.05 && belowDw > -0.02) {
+          insights.wins.push({
+            headline: `Your tipping point: ${threshold} calories out`,
+            detail: `On ${above.length} days you burned ≥${threshold} cal — weight dropped ${fmt1(toDisplayWeight(Math.abs(aboveDw), unit))} ${weightUnit(unit)} next morning on average. On ${below.length} days under ${threshold}, weight didn't move. Aim for ${threshold}+.`,
+          });
+          break;
+        }
+      }
+    }
+  }
+
+  // Protein → next-day weight
+  const proteinPairs = [];
+  for (let i = 0; i < logs.length - 1; i++) {
+    if (logs[i].protein_g && logs[i+1].weight_kg && logs[i].weight_kg) {
+      proteinPairs.push({ p: logs[i].protein_g, dw: logs[i+1].weight_kg - logs[i].weight_kg });
+    }
+  }
+  if (proteinPairs.length >= 4 && profile.protein_target) {
+    const above = proteinPairs.filter(p => p.p >= profile.protein_target);
+    if (above.length >= 2) {
+      const avgDw = above.reduce((s,p) => s+p.dw, 0) / above.length;
+      if (avgDw < -0.05) insights.wins.push({
+        headline: `Hitting protein helps`,
+        detail: `On days you hit ${profile.protein_target}g+, you woke up ${fmt1(toDisplayWeight(Math.abs(avgDw), unit))} ${weightUnit(unit)} lighter on average.`,
+      });
+    }
+  }
+
+  // Alcohol → HRV
+  const alcLogs = logs.filter(l => l.alcohol_units !== null && l.alcohol_units !== undefined && l.hrv);
+  if (alcLogs.length >= 5) {
+    const drinking = alcLogs.filter(l => l.alcohol_units > 0);
+    const sober = alcLogs.filter(l => l.alcohol_units === 0);
+    if (drinking.length >= 2 && sober.length >= 2) {
+      const drop = ((avg(sober, 'hrv') - avg(drinking, 'hrv')) / avg(sober, 'hrv')) * 100;
+      if (drop > 5) insights.wins.push({
+        headline: `Alcohol costs you ${Math.round(drop)}% HRV`,
+        detail: `On drinking days your HRV averages ${fmt0(avg(drinking, 'hrv'))} vs ${fmt0(avg(sober, 'hrv'))} on dry days. Two clean days fully restores it.`,
+      });
+    }
+  }
+
+  // Muscle stability through loss
+  const muscleLogs = logs.filter(l => l.muscle_kg && l.weight_kg);
+  if (muscleLogs.length >= 7) {
+    const first = muscleLogs[0];
+    const last = muscleLogs[muscleLogs.length - 1];
+    const wChange = last.weight_kg - first.weight_kg;
+    const mChange = last.muscle_kg - first.muscle_kg;
+    if (wChange < -0.3 && mChange >= -0.2) {
+      insights.wins.push({
+        headline: `Muscle is holding`,
+        detail: `Down ${fmt1(toDisplayWeight(Math.abs(wChange), unit))} ${weightUnit(unit)} since first log, muscle mass stable. That's fat loss, not weight loss. This is the goal.`,
+      });
+    }
+    if (wChange < -0.3 && mChange < -0.3) {
+      insights.gaps.push({
+        headline: `Losing muscle, not just fat`,
+        detail: `Weight down ${fmt1(toDisplayWeight(Math.abs(wChange), unit))} ${weightUnit(unit)} but muscle down ${fmt1(toDisplayWeight(Math.abs(mChange), unit))} ${weightUnit(unit)}. Eat more protein, lift heavier, or both.`,
+      });
+    }
+  }
+
+  // ============ STALLS (when weight isn't moving, why) ============
+  const weightLogs = logs.filter(l => l.weight_kg).slice(-7);
+  if (weightLogs.length >= 5) {
+    const w = weightLogs.map(l => l.weight_kg);
+    const range = Math.max(...w) - Math.min(...w);
+    if (range < 0.4) {
+      // Stall detected — diagnose why
+      const stallCalOut = avg(logs.slice(-7), 'calories_out');
+      const stallSleep = avg(logs.slice(-7), 'sleep_hours');
+      const stallAlc = logs.slice(-7).reduce((s,l) => s + (l.alcohol_units || 0), 0);
+      let why = [];
+      if (stallCalOut && stallCalOut < 2200) why.push(`calories out averaging ${fmt0(stallCalOut)}`);
+      if (stallSleep && stallSleep < 7) why.push(`sleep averaging ${fmt1(stallSleep)}h`);
+      if (stallAlc > 4) why.push(`${stallAlc} units alcohol in the last week`);
+      insights.stalls.push({
+        headline: `Weight has stalled for 5+ days`,
+        detail: why.length ? `Likely cause: ${why.join('; ')}. Pick one to fix this week.` : 'Numbers look fine — could be water shift. Hold the line for 3-4 more days.',
+      });
+    }
+  }
+
+  // Body fat moving but weight isn't (water explanation)
+  if (logs.length >= 7) {
+    const bfLogs = logs.filter(l => l.body_fat_pct).slice(-14);
+    if (bfLogs.length >= 4) {
+      const bfChange = bfLogs[bfLogs.length-1].body_fat_pct - bfLogs[0].body_fat_pct;
+      const wLogs = logs.filter(l => l.weight_kg).slice(-14);
+      const wChange = wLogs.length >= 2 ? wLogs[wLogs.length-1].weight_kg - wLogs[0].weight_kg : 0;
+      if (bfChange < -0.5 && Math.abs(wChange) < 0.3) {
+        insights.wins.push({
+          headline: `Body fat down ${fmt1(Math.abs(bfChange))}%, scale flat`,
+          detail: `You're losing fat and gaining/holding muscle. The scale lies — body comp is the signal.`,
+        });
+      }
+    }
+  }
+
+  // ============ CYCLE PATTERNS (across phases) ============
+  if (profile.track_cycle && profile.last_period_start && logs.length >= 14) {
+    const byPhase = { Menstrual: [], Follicular: [], Ovulatory: [], Luteal: [] };
+    for (const l of logs) {
+      const d = daysBetween(parseYMD(profile.last_period_start), parseYMD(l.date));
+      if (d < 0) continue;
+      const cd = (d % (profile.cycle_length || 28)) + 1;
+      const p = calcPhase(cd, profile.cycle_length, profile.period_length);
+      if (p) byPhase[p].push(l);
+    }
+    // HRV across phases
+    const hrvByPhase = {};
+    for (const p of ['Menstrual','Follicular','Ovulatory','Luteal']) {
+      const h = avg(byPhase[p], 'hrv');
+      if (h !== null) hrvByPhase[p] = h;
+    }
+    if (hrvByPhase.Follicular && hrvByPhase.Luteal) {
+      const drop = hrvByPhase.Follicular - hrvByPhase.Luteal;
+      if (drop > 2) insights.cycle.push({
+        headline: `HRV drops ${fmt0(drop)}ms in luteal vs follicular`,
+        detail: `That's normal — progesterone suppresses HRV. Plan lighter weeks in luteal and treat the drop as expected, not alarming.`,
+      });
+    }
+    // Step pattern
+    const stepByPhase = {};
+    for (const p of ['Menstrual','Follicular','Ovulatory','Luteal']) {
+      const s = avg(byPhase[p], 'steps');
+      if (s !== null) stepByPhase[p] = s;
+    }
+    if (stepByPhase.Follicular && stepByPhase.Luteal && stepByPhase.Follicular > stepByPhase.Luteal + 500) {
+      insights.cycle.push({
+        headline: `+${fmt0(stepByPhase.Follicular - stepByPhase.Luteal)} more steps in follicular`,
+        detail: `You move more in your strong phase. Lean into it — use luteal for steady volume, follicular for intensity.`,
+      });
+    }
+    // Weight by phase
+    const wByPhase = {};
+    for (const p of ['Menstrual','Follicular','Ovulatory','Luteal']) {
+      const w = avg(byPhase[p], 'weight_kg');
+      if (w !== null) wByPhase[p] = w;
+    }
+    if (wByPhase.Luteal && wByPhase.Follicular && wByPhase.Luteal > wByPhase.Follicular + 0.3) {
+      insights.cycle.push({
+        headline: `You weigh more in luteal — that's water`,
+        detail: `Average luteal weight is ${fmt1(toDisplayWeight(wByPhase.Luteal - wByPhase.Follicular, unit))} ${weightUnit(unit)} higher than follicular. Hormonal water retention, not fat. Don't panic-restrict.`,
+      });
+    }
+  }
+
+  return insights;
+}
+
+// ============================================================
+// PROGRESS METRICS — for keeping users motivated through sparse early weeks
+// ============================================================
+function progressStatus(logs, profile) {
+  const daysLogged = logs.length;
+  const out = { daysLogged, streak: 0, nextUnlock: null, tinyWins: [] };
+
+  // Calculate streak (consecutive days from most recent)
+  let streak = 0;
+  const dateSet = new Set(logs.map(l => l.date));
+  let cursor = today();
+  // If today not logged, start counting from yesterday
+  if (!dateSet.has(ymd(cursor))) cursor = new Date(cursor.getTime() - 86400000);
+  while (dateSet.has(ymd(cursor))) {
+    streak++;
+    cursor = new Date(cursor.getTime() - 86400000);
+  }
+  out.streak = streak;
+
+  // What unlocks next
+  if (daysLogged < 3) out.nextUnlock = `${3 - daysLogged} more day${3 - daysLogged === 1 ? '' : 's'} until your first weight trend`;
+  else if (daysLogged < 7) out.nextUnlock = `${7 - daysLogged} more day${7 - daysLogged === 1 ? '' : 's'} until correlations unlock`;
+  else if (daysLogged < 14) out.nextUnlock = `${14 - daysLogged} more day${14 - daysLogged === 1 ? '' : 's'} until full cycle insights`;
+  else if (daysLogged < 28) out.nextUnlock = `${28 - daysLogged} more day${28 - daysLogged === 1 ? '' : 's'} until your recovery baseline locks in`;
+
+  // Tiny wins — observations from first few days even without correlations
+  if (daysLogged >= 2) {
+    const wLogs = logs.filter(l => l.weight_kg);
+    if (wLogs.length >= 2) {
+      const change = wLogs[wLogs.length-1].weight_kg - wLogs[0].weight_kg;
+      if (change < -0.1) out.tinyWins.push(`Weight down ${fmt1(toDisplayWeight(Math.abs(change), profile.unit_system))} ${weightUnit(profile.unit_system)} since first log`);
+    }
+    const sLogs = logs.filter(l => l.sleep_hours);
+    if (sLogs.length >= 2) {
+      const change = sLogs[sLogs.length-1].sleep_hours - sLogs[0].sleep_hours;
+      if (change > 0.3) out.tinyWins.push(`Sleep up ${fmt1(change)}h vs your first day`);
+    }
+    const proteinHits = logs.filter(l => l.protein_g && profile.protein_target && l.protein_g >= profile.protein_target).length;
+    if (proteinHits >= 2) out.tinyWins.push(`Hit protein target ${proteinHits} of ${daysLogged} days`);
+    const stepDays = logs.filter(l => l.steps && profile.baseline_steps && l.steps >= profile.baseline_steps).length;
+    if (stepDays >= 2) out.tinyWins.push(`Hit step target ${stepDays} of ${daysLogged} days`);
+  }
+
+  return out;
+}
 
 // ============================================================
 // SHARED COMPONENTS
@@ -444,7 +845,20 @@ function Onboarding({ user, onDone }) {
   const [proteinTarget, setProteinTarget] = useState(110);
   const [waterTarget, setWaterTarget] = useState(2.5);
   const [sleepTarget, setSleepTarget] = useState(7.5);
+  const [agreed, setAgreed] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Switch water default when unit changes (2.5L ≈ 85 fl oz)
+  useEffect(() => {
+    setWaterTarget(prev => {
+      const n = Number(prev);
+      if (!n) return isImperial(unit) ? 85 : 2.5;
+      // Only convert if value matches the other system's default
+      if (isImperial(unit) && n <= 5) return Math.round(n * 33.814);
+      if (!isImperial(unit) && n > 5) return +(n / 33.814).toFixed(1);
+      return prev;
+    });
+  }, [unit]);
 
   const isPeri = lifeStage === 'Perimenopause' || lifeStage === 'Post-menopause';
   const hasCycles = !(regularity === 'None anymore');
@@ -456,7 +870,7 @@ function Onboarding({ user, onDone }) {
       start_weight_kg: fromDisplayWeight(startWeight, unit),
       goal_weight_kg: fromDisplayWeight(goalWeight, unit),
       goal_date: goalDate, life_stage: lifeStage,
-      height_cm: height ? Number(height) : null,
+      height_cm: fromDisplayHeight(height, unit),
       age: age ? Number(age) : null,
       track_cycle: trackCycle && hasCycles,
       cycle_regularity: trackCycle ? regularity : null,
@@ -466,7 +880,7 @@ function Onboarding({ user, onDone }) {
       period_length: Number(periodLength) || 5,
       baseline_steps: Number(baselineSteps) || 8000,
       protein_target: Number(proteinTarget) || 110,
-      water_target: Number(waterTarget) || 2.5,
+      water_target: fromDisplayWater(waterTarget, unit) || 2.5,
       sleep_target: Number(sleepTarget) || 7.5,
       onboarded_at: new Date().toISOString(),
     };
@@ -493,24 +907,25 @@ function Onboarding({ user, onDone }) {
                 <option>Pre-menopause</option><option>Perimenopause</option><option>Post-menopause</option>
               </select>
             </div>
-            <div><div className="field-label">Height (cm)</div><input type="number" className="input" value={height} onChange={(e) => setHeight(e.target.value)} /></div>
+            <div><div className="field-label">Height ({heightUnit(unit)})</div><input type="number" step="0.1" className="input" value={height} onChange={(e) => setHeight(e.target.value)} /></div>
             <div><div className="field-label">Age</div><input type="number" className="input" value={age} onChange={(e) => setAge(e.target.value)} /></div>
           </div>
         </div>
 
         <div className="card" style={{ marginBottom: 14 }}>
-          <div className="label" style={{ marginBottom: 14 }}>Units</div>
-          <div style={{ display: 'flex', gap: 8, maxWidth: 280 }}>
-            <PillBtn active={unit === 'kg'} onClick={() => setUnit('kg')}>kg</PillBtn>
-            <PillBtn active={unit === 'lbs'} onClick={() => setUnit('lbs')}>lbs</PillBtn>
+          <div className="label" style={{ marginBottom: 6 }}>Units</div>
+          <p style={{ fontSize: 12, color: 'var(--text-mute)', marginBottom: 12 }}>Switch any time in Settings.</p>
+          <div style={{ display: 'flex', gap: 8, maxWidth: 320 }}>
+            <PillBtn active={!isImperial(unit)} onClick={() => setUnit('kg')}>Metric (kg/cm/L)</PillBtn>
+            <PillBtn active={isImperial(unit)} onClick={() => setUnit('lbs')}>Imperial (lbs/in/fl oz)</PillBtn>
           </div>
         </div>
 
         <div className="card" style={{ marginBottom: 14 }}>
           <div className="label" style={{ marginBottom: 14 }}>Your goal</div>
           <div className="row row-3">
-            <div><div className="field-label">Starting weight ({unit})</div><input type="number" step="0.1" className="input" value={startWeight} onChange={(e) => setStartWeight(e.target.value)} /></div>
-            <div><div className="field-label">Goal weight ({unit})</div><input type="number" step="0.1" className="input" value={goalWeight} onChange={(e) => setGoalWeight(e.target.value)} /></div>
+            <div><div className="field-label">Starting weight ({weightUnit(unit)})</div><input type="number" step="0.1" className="input" value={startWeight} onChange={(e) => setStartWeight(e.target.value)} /></div>
+            <div><div className="field-label">Goal weight ({weightUnit(unit)})</div><input type="number" step="0.1" className="input" value={goalWeight} onChange={(e) => setGoalWeight(e.target.value)} /></div>
             <div><div className="field-label">By when</div><input type="date" className="input" value={goalDate} onChange={(e) => setGoalDate(e.target.value)} /></div>
           </div>
         </div>
@@ -567,12 +982,26 @@ function Onboarding({ user, onDone }) {
           <div className="row row-4">
             <div><div className="field-label">Steps</div><input type="number" className="input" value={baselineSteps} onChange={(e) => setBaselineSteps(e.target.value)} /></div>
             <div><div className="field-label">Protein (g)</div><input type="number" className="input" value={proteinTarget} onChange={(e) => setProteinTarget(e.target.value)} /></div>
-            <div><div className="field-label">Water (L)</div><input type="number" step="0.1" className="input" value={waterTarget} onChange={(e) => setWaterTarget(e.target.value)} /></div>
+            <div><div className="field-label">Water ({waterUnit(unit)})</div><input type="number" step="0.1" className="input" value={waterTarget} onChange={(e) => setWaterTarget(e.target.value)} /></div>
             <div><div className="field-label">Sleep (hrs)</div><input type="number" step="0.1" className="input" value={sleepTarget} onChange={(e) => setSleepTarget(e.target.value)} /></div>
           </div>
         </div>
 
-        <button className="btn" style={{ width: '100%', padding: 16, fontSize: 14 }} onClick={save} disabled={saving || !name}>
+        <div className="card" style={{ marginBottom: 22, background: 'var(--surface-2)', borderLeft: '4px solid var(--teal)' }}>
+          <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: 'var(--text-mute)' }}>Before you start</h3>
+          <p style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.65, marginBottom: 12 }}>
+            This app gives general guidance based on your logged data. It is <strong>not medical advice</strong> and doesn't replace your doctor or a registered dietitian.
+          </p>
+          <p style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.65, marginBottom: 14 }}>
+            If you're managing a condition, taking medication, pregnant, or worried about your hormones — talk to your healthcare provider before changing anything.
+          </p>
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+            <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} style={{ width: 18, height: 18, accentColor: 'var(--teal)', marginTop: 2, flexShrink: 0 }} />
+            <span style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.5 }}>I understand this is educational, not medical advice.</span>
+          </label>
+        </div>
+
+        <button className="btn" style={{ width: '100%', padding: 16, fontSize: 14 }} onClick={save} disabled={saving || !name || !agreed}>
           {saving ? 'Saving...' : 'Start tracking'}
         </button>
       </div>
@@ -654,43 +1083,59 @@ function Dashboard({ profile, logs, todayLog, setView }) {
   const daysLeft = goalDate ? Math.max(0, daysBetween(today(), goalDate)) : null;
   const recDot = rec.tone === 'green' ? 'var(--success)' : rec.tone === 'red' ? 'var(--danger)' : rec.tone === 'yellow' ? 'var(--warn)' : 'var(--text-faint)';
 
+  const focus = todaysFocus({ recovery, phase, todayLog, profile, baselines });
+  const progress = progressStatus(logs, profile);
+
   return (
     <div className="fade-in">
       <h1 className="page-title">Dashboard</h1>
       <p className="page-sub">Today's signal — what's changing and what to do about it.</p>
 
-      {/* Hero row */}
-      <div className="row" style={{ gridTemplateColumns: '1.4fr 1fr', marginBottom: 16 }}>
-        <div className="card-gradient">
-          <span className="pill pill-pink" style={{ marginBottom: 14 }}>Today's focus</span>
-          <h2 style={{ fontSize: 26, fontWeight: 700, lineHeight: 1.2, marginBottom: 12, color: 'var(--text)' }}>
-            {recovery === null ? 'Set a baseline this week.' :
-             recovery >= 1.05 ? 'Recovered — push NEAT today.' :
-             recovery >= 0.95 ? 'Steady. Stick to the plan.' :
-             'Take it easy. Walking only.'}
-          </h2>
-          <p style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.6 }}>
-            {phase
-              ? `${phase} phase, day ${cycleDay}. ${guide?.prioritize || ''}`
-              : 'Log a few days to unlock recovery score and phase guidance.'}
-          </p>
-        </div>
-
-        <div className="card-teal">
-          <div style={{ fontSize: 10, letterSpacing: 1.8, textTransform: 'uppercase', opacity: 0.7, marginBottom: 10 }}>Auto insight</div>
-          <h3 style={{ fontSize: 17, fontWeight: 700, lineHeight: 1.3, marginBottom: 10 }}>
-            {phase === 'Luteal' ? 'Maintain intensity, trim volume if recovery drops' :
-             phase === 'Menstrual' ? 'Rest is training. Move gently, eat iron.' :
-             phase === 'Follicular' ? 'Best window for PRs and intensity' :
-             phase === 'Ovulatory' ? 'Peak strength — go for it' :
-             'Log today\'s data to see today\'s focus'}
-          </h3>
-          {guide && (
-            <p style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.6 }}>
-              {guide.train}
-            </p>
+      {/* Progress strip — keeps users motivated through sparse early weeks */}
+      {logs.length < 28 && (
+        <div className="card" style={{ marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 22, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div>
+              <div className="label" style={{ marginBottom: 4 }}>Days logged</div>
+              <div style={{ fontSize: 20, fontWeight: 700 }}>{progress.daysLogged}</div>
+            </div>
+            {progress.streak > 1 && (
+              <div>
+                <div className="label" style={{ marginBottom: 4 }}>Streak</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--pink)' }}>🔥 {progress.streak} days</div>
+              </div>
+            )}
+            {progress.tinyWins.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {progress.tinyWins.slice(0, 2).map((w, i) => (
+                  <div key={i} style={{ fontSize: 12, color: 'var(--text-mute)' }}>✓ {w}</div>
+                ))}
+              </div>
+            )}
+          </div>
+          {progress.nextUnlock && (
+            <div style={{ fontSize: 12, color: 'var(--teal)', fontWeight: 500 }}>{progress.nextUnlock}</div>
           )}
         </div>
+      )}
+
+      {/* Single unified Today's Focus card — no contradictions */}
+      <div className="card-gradient" style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+          <span className="pill pill-pink">Today's focus</span>
+          {phase && <span className="pill pill-teal">{phase} · day {cycleDay}</span>}
+        </div>
+        <h2 style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.25, marginBottom: 10, color: 'var(--text)' }}>
+          {focus.headline}
+        </h2>
+        <p style={{ fontSize: 14, color: 'var(--text-mute)', lineHeight: 1.6, marginBottom: focus.action ? 12 : 0 }}>
+          {focus.detail}
+        </p>
+        {focus.action && (
+          <p style={{ fontSize: 13, color: 'var(--teal)', fontWeight: 600, lineHeight: 1.5 }}>
+            → {focus.action}
+          </p>
+        )}
       </div>
 
       {/* Key metrics row */}
@@ -712,7 +1157,7 @@ function Dashboard({ profile, logs, todayLog, setView }) {
           <div className="label">Weight (7-day)</div>
           <div className="stat-num" style={{ marginTop: 8 }}>
             {weight7d !== null ? fmt1(toDisplayWeight(weight7d, unit)) : '–'}
-            <span style={{ fontSize: 13, color: 'var(--text-mute)', marginLeft: 4 }}>{unit}</span>
+            <span style={{ fontSize: 13, color: 'var(--text-mute)', marginLeft: 4 }}>{weightUnit(unit)}</span>
           </div>
           {change !== null && (
             <div className="stat-sub" style={{ color: change <= 0 ? 'var(--success)' : 'var(--text-mute)' }}>
@@ -730,7 +1175,7 @@ function Dashboard({ profile, logs, todayLog, setView }) {
           <div className="stat-num" style={{ marginTop: 8 }}>{daysLeft ?? '–'}</div>
           <div className="stat-sub">
             {totalChange !== null && change !== null
-              ? `${fmt1(toDisplayWeight(change, unit))} of ${fmt1(toDisplayWeight(totalChange, unit))} ${unit}`
+              ? `${fmt1(toDisplayWeight(change, unit))} of ${fmt1(toDisplayWeight(totalChange, unit))} ${weightUnit(unit)}`
               : '–'}
           </div>
         </div>
@@ -840,10 +1285,10 @@ function DailyLog({ profile, todayLog, onLogSaved }) {
     setCarbs(todayLog.carbs_g || '');
     setFat(todayLog.fat_g || '');
     setFibre(todayLog.fibre_g || '');
-    setWater(todayLog.water_l || '');
+    setWater(todayLog.water_l ? fmt1(toDisplayWater(todayLog.water_l, unit)) : '');
     setMood(todayLog.mood || '');
     setStress(todayLog.stress || '');
-    setCaffeine(todayLog.caffeine_mg || '');
+    setCaffeine(todayLog.caffeine_mg ? (todayLog.caffeine_mg / 95).toFixed(1) : '');
     setAlcohol(todayLog.alcohol_units || '');
     setSessions(todayLog.sessions || []);
     setPeriodToday(!!todayLog.period_today);
@@ -869,10 +1314,10 @@ function DailyLog({ profile, todayLog, onLogSaved }) {
       carbs_g: carbs ? Number(carbs) : null,
       fat_g: fat ? Number(fat) : null,
       fibre_g: fibre ? Number(fibre) : null,
-      water_l: water ? Number(water) : null,
+      water_l: fromDisplayWater(water, unit),
       mood: mood ? Number(mood) : null,
       stress: stress ? Number(stress) : null,
-      caffeine_mg: caffeine ? Number(caffeine) : null,
+      caffeine_mg: caffeine ? Math.round(Number(caffeine) * 95) : null,
       alcohol_units: alcohol ? Number(alcohol) : null,
       sessions, period_today: periodToday, notes,
     };
@@ -910,9 +1355,9 @@ function DailyLog({ profile, todayLog, onLogSaved }) {
       <div className="card" style={{ marginBottom: 14 }}>
         <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, color: 'var(--teal)' }}>Body composition</h3>
         <div className="row row-4">
-          <div><div className="field-label">Weight ({unit})</div><input type="number" step="0.1" className="input" value={weight} onChange={(e) => setWeight(e.target.value)} /></div>
+          <div><div className="field-label">Weight ({weightUnit(unit)})</div><input type="number" step="0.1" className="input" value={weight} onChange={(e) => setWeight(e.target.value)} /></div>
           <div><div className="field-label">Body fat %</div><input type="number" step="0.1" className="input" value={bodyFat} onChange={(e) => setBodyFat(e.target.value)} /></div>
-          <div><div className="field-label">Muscle ({unit})</div><input type="number" step="0.1" className="input" value={muscle} onChange={(e) => setMuscle(e.target.value)} /></div>
+          <div><div className="field-label">Muscle ({weightUnit(unit)})</div><input type="number" step="0.1" className="input" value={muscle} onChange={(e) => setMuscle(e.target.value)} /></div>
           <div><div className="field-label">Body water %</div><input type="number" step="0.1" className="input" value={bodyWater} onChange={(e) => setBodyWater(e.target.value)} /></div>
         </div>
       </div>
@@ -938,7 +1383,7 @@ function DailyLog({ profile, todayLog, onLogSaved }) {
           <div><div className="field-label">Carbs (g)</div><input type="number" className="input" value={carbs} onChange={(e) => setCarbs(e.target.value)} /></div>
           <div><div className="field-label">Fat (g)</div><input type="number" className="input" value={fat} onChange={(e) => setFat(e.target.value)} /></div>
           <div><div className="field-label">Fibre (g)</div><input type="number" className="input" value={fibre} onChange={(e) => setFibre(e.target.value)} /></div>
-          <div><div className="field-label">Water (L)</div><input type="number" step="0.1" className="input" value={water} onChange={(e) => setWater(e.target.value)} /></div>
+          <div><div className="field-label">Water ({waterUnit(unit)})</div><input type="number" step="0.1" className="input" value={water} onChange={(e) => setWater(e.target.value)} /></div>
           <div><div className="field-label">Steps</div><input type="number" className="input" value={steps} onChange={(e) => setSteps(e.target.value)} /></div>
         </div>
       </div>
@@ -946,7 +1391,7 @@ function DailyLog({ profile, todayLog, onLogSaved }) {
       <div className="card" style={{ marginBottom: 14 }}>
         <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, color: 'var(--teal)' }}>Lifestyle</h3>
         <div className="row row-4">
-          <div><div className="field-label">Caffeine (mg)</div><input type="number" className="input" value={caffeine} onChange={(e) => setCaffeine(e.target.value)} /></div>
+          <div><div className="field-label">Caffeine (cups)</div><input type="number" step="0.5" className="input" value={caffeine} onChange={(e) => setCaffeine(e.target.value)} placeholder="2 = 2 cups coffee" /></div>
           <div><div className="field-label">Alcohol (units)</div><input type="number" step="0.5" className="input" value={alcohol} onChange={(e) => setAlcohol(e.target.value)} /></div>
         </div>
       </div>
@@ -1076,7 +1521,7 @@ function CycleInsights({ profile, logs }) {
               <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 14 }}>How you log across phases</h3>
               <table>
                 <thead>
-                  <tr><th>Phase</th><th>Days logged</th><th>Avg weight ({unit})</th><th>Avg HRV (ms)</th></tr>
+                  <tr><th>Phase</th><th>Days logged</th><th>Avg weight ({weightUnit(unit)})</th><th>Avg HRV (ms)</th></tr>
                 </thead>
                 <tbody>
                   {Object.entries(phaseAvgs).map(([p, data]) => (
@@ -1133,29 +1578,29 @@ function WeightTrends({ profile, logs }) {
       <div className="row row-4" style={{ marginBottom: 14 }}>
         <div className="card">
           <div className="label">Start</div>
-          <div className="stat-num-sm" style={{ marginTop: 8 }}>{startW ? fmt1(toDisplayWeight(startW, unit)) : '–'} <span style={{ fontSize: 12, color: 'var(--text-mute)' }}>{unit}</span></div>
+          <div className="stat-num-sm" style={{ marginTop: 8 }}>{startW ? fmt1(toDisplayWeight(startW, unit)) : '–'} <span style={{ fontSize: 12, color: 'var(--text-mute)' }}>{weightUnit(unit)}</span></div>
         </div>
         <div className="card">
           <div className="label">7-day avg</div>
-          <div className="stat-num-sm" style={{ marginTop: 8 }}>{w7 !== null ? fmt1(toDisplayWeight(w7, unit)) : '–'} <span style={{ fontSize: 12, color: 'var(--text-mute)' }}>{unit}</span></div>
+          <div className="stat-num-sm" style={{ marginTop: 8 }}>{w7 !== null ? fmt1(toDisplayWeight(w7, unit)) : '–'} <span style={{ fontSize: 12, color: 'var(--text-mute)' }}>{weightUnit(unit)}</span></div>
           {w7 !== null && startW && <div className="stat-sub" style={{ color: w7 <= startW ? 'var(--success)' : 'var(--text-mute)' }}>{fmt1(toDisplayWeight(w7 - startW, unit))} from start</div>}
         </div>
         <div className="card">
           <div className="label">14-day avg</div>
-          <div className="stat-num-sm" style={{ marginTop: 8 }}>{w14 !== null ? fmt1(toDisplayWeight(w14, unit)) : '–'} <span style={{ fontSize: 12, color: 'var(--text-mute)' }}>{unit}</span></div>
+          <div className="stat-num-sm" style={{ marginTop: 8 }}>{w14 !== null ? fmt1(toDisplayWeight(w14, unit)) : '–'} <span style={{ fontSize: 12, color: 'var(--text-mute)' }}>{weightUnit(unit)}</span></div>
         </div>
         <div className="card">
           <div className="label">28-day avg</div>
-          <div className="stat-num-sm" style={{ marginTop: 8 }}>{w28 !== null ? fmt1(toDisplayWeight(w28, unit)) : '–'} <span style={{ fontSize: 12, color: 'var(--text-mute)' }}>{unit}</span></div>
+          <div className="stat-num-sm" style={{ marginTop: 8 }}>{w28 !== null ? fmt1(toDisplayWeight(w28, unit)) : '–'} <span style={{ fontSize: 12, color: 'var(--text-mute)' }}>{weightUnit(unit)}</span></div>
         </div>
       </div>
 
       <div className="card" style={{ marginBottom: 14 }}>
         <div className="label" style={{ marginBottom: 4 }}>Weight × Body fat × Muscle · 30 days</div>
         <ChartLegend items={[
-          { color: '#00687a', label: `Weight (${unit})` },
+          { color: '#00687a', label: `Weight (${weightUnit(unit)})` },
           { color: '#ff5bcf', label: 'Body fat %' },
-          { color: '#cfff04', label: `Muscle (${unit})` },
+          { color: '#cfff04', label: `Muscle (${weightUnit(unit)})` },
         ]} />
         <div style={{ marginTop: 8 }}>
           <MultiLineChart series={[
@@ -1195,86 +1640,91 @@ function RecoveryView({ profile, logs }) {
   const calIn14 = last14.map(l => l.calories_in || null);
   const calOut14 = last14.map(l => l.calories_out || null);
 
-  // Build correlations from real data
-  const insights = useMemo(() => {
-    const out = [];
-    if (logs.length < 7) return out;
-    const withSleep = logs.filter(l => l.sleep_hours && l.steps);
-    if (withSleep.length >= 5) {
-      const high = withSleep.filter(l => l.sleep_hours >= 7.5);
-      const low = withSleep.filter(l => l.sleep_hours < 7.5);
-      if (high.length && low.length) {
-        const diff = Math.round(avg(high, 'steps') - avg(low, 'steps'));
-        if (diff > 0) out.push({ headline: `+${diff.toLocaleString()} steps`, detail: 'on days you slept >7.5h', color: 'var(--success)' });
-      }
-    }
-    if (logs.length >= 5) {
-      const pairs = [];
-      for (let i = 0; i < logs.length - 1; i++) {
-        if (logs[i].protein_g && logs[i+1].weight_kg && logs[i].weight_kg) {
-          pairs.push({ protein: logs[i].protein_g, dw: logs[i+1].weight_kg - logs[i].weight_kg });
-        }
-      }
-      if (pairs.length >= 4) {
-        const target = profile.protein_target || 110;
-        const above = pairs.filter(p => p.protein >= target);
-        if (above.length >= 2) {
-          const avgDw = above.reduce((s, p) => s + p.dw, 0) / above.length;
-          if (avgDw < 0) out.push({ headline: `${fmt1(toDisplayWeight(avgDw, unit))} ${unit}`, detail: `morning after >${target}g protein`, color: 'var(--pink)' });
-        }
-      }
-    }
-    const alcLogs = logs.filter(l => l.alcohol_units !== null && l.alcohol_units !== undefined && l.hrv);
-    if (alcLogs.length >= 5) {
-      const drinking = alcLogs.filter(l => l.alcohol_units > 0);
-      const sober = alcLogs.filter(l => l.alcohol_units === 0);
-      if (drinking.length && sober.length) {
-        const drop = ((avg(sober, 'hrv') - avg(drinking, 'hrv')) / avg(sober, 'hrv')) * 100;
-        if (drop > 0) out.push({ headline: `−${Math.round(drop)}%`, detail: 'HRV on alcohol days', color: 'var(--danger)' });
-      }
-    }
-    const withMuscle = logs.filter(l => l.muscle_kg && l.weight_kg);
-    if (withMuscle.length >= 7) {
-      const first = withMuscle[0];
-      const last = withMuscle[withMuscle.length - 1];
-      const wChange = last.weight_kg - first.weight_kg;
-      const mChange = last.muscle_kg - first.muscle_kg;
-      if (wChange < -0.3 && mChange >= -0.2) {
-        out.push({ headline: 'Muscle stable', detail: `through ${fmt1(toDisplayWeight(wChange, unit))} ${unit} loss — winning`, color: 'var(--success)' });
-      }
-    }
-    return out;
-  }, [logs, profile, unit]);
+  // Use the central insights engine for all 4 categories
+  const insights = useMemo(() => generateInsights(logs, profile), [logs, profile]);
 
   const calIn7 = avg(logs.slice(-7), 'calories_in');
   const calOut7 = avg(logs.slice(-7), 'calories_out');
   const deficit = (calIn7 !== null && calOut7 !== null) ? calOut7 - calIn7 : null;
+
+  const totalInsights = insights.gaps.length + insights.wins.length + insights.stalls.length + insights.cycle.length;
 
   return (
     <div className="fade-in">
       <h1 className="page-title">Recovery & training</h1>
       <p className="page-sub">What's helping you make progress.</p>
 
-      <div className="card-teal" style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 16 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, letterSpacing: 0.3 }}>What's working — last 14 days</h3>
-          <span style={{ fontSize: 10, opacity: 0.7 }}>more accurate with more data</span>
-        </div>
-        {insights.length === 0 ? (
-          <p style={{ fontSize: 13, opacity: 0.85, lineHeight: 1.6, fontStyle: 'italic' }}>
-            Patterns appear after about a week. Keep logging sleep, protein, HRV, and body comp — they'll surface here.
+      {/* INSIGHTS — 4 categories: gaps, wins, stalls, cycle */}
+      {totalInsights === 0 ? (
+        <div className="card-teal" style={{ marginBottom: 14 }}>
+          <div className="label" style={{ color: 'rgba(255,255,255,0.7)', marginBottom: 10 }}>What's working — last 14 days</div>
+          <p style={{ fontSize: 14, opacity: 0.9, lineHeight: 1.6 }}>
+            {logs.length < 3
+              ? `Log ${3 - logs.length} more day${3 - logs.length === 1 ? '' : 's'} and the first observations will appear here.`
+              : logs.length < 7
+              ? `Patterns start surfacing after a week. You've logged ${logs.length} day${logs.length === 1 ? '' : 's'} — keep going.`
+              : 'Patterns will surface once you have enough complete data (sleep, HRV, weight, food).'}
           </p>
-        ) : (
-          <div className="row row-3">
-            {insights.map((it, i) => (
-              <div key={i} style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 12, padding: 14 }}>
-                <div style={{ fontSize: 22, fontWeight: 700, color: it.color, lineHeight: 1.1 }}>{it.headline}</div>
-                <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6, lineHeight: 1.4 }}>{it.detail}</div>
+        </div>
+      ) : (
+        <>
+          {insights.gaps.length > 0 && (
+            <div className="card" style={{ marginBottom: 14, borderLeft: '4px solid var(--pink)' }}>
+              <div className="label" style={{ marginBottom: 12, color: 'var(--pink)' }}>What's holding you back</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {insights.gaps.map((it, i) => (
+                  <div key={i}>
+                    <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{it.headline}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.5 }}>{it.detail}</div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-      </div>
+            </div>
+          )}
+
+          {insights.wins.length > 0 && (
+            <div className="card-teal" style={{ marginBottom: 14 }}>
+              <div className="label" style={{ color: 'rgba(255,255,255,0.7)', marginBottom: 12 }}>What's working for you</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {insights.wins.map((it, i) => (
+                  <div key={i} style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 10, padding: 14 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>{it.headline}</div>
+                    <div style={{ fontSize: 13, opacity: 0.9, lineHeight: 1.5 }}>{it.detail}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {insights.stalls.length > 0 && (
+            <div className="card" style={{ marginBottom: 14, borderLeft: '4px solid var(--warn)' }}>
+              <div className="label" style={{ marginBottom: 12, color: 'var(--warn)' }}>Plateaus & stalls</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {insights.stalls.map((it, i) => (
+                  <div key={i}>
+                    <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{it.headline}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.5 }}>{it.detail}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {insights.cycle.length > 0 && (
+            <div className="card" style={{ marginBottom: 14, borderLeft: '4px solid var(--teal)' }}>
+              <div className="label" style={{ marginBottom: 12, color: 'var(--teal)' }}>Cycle patterns</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {insights.cycle.map((it, i) => (
+                  <div key={i}>
+                    <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{it.headline}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.5 }}>{it.detail}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
 
       <div className="row row-2" style={{ marginBottom: 14 }}>
         <div className="card">
@@ -1361,10 +1811,10 @@ function SettingsView({ profile, onUpdate }) {
   const [name, setName] = useState(profile.name || '');
   const [unit, setUnit] = useState(profile.unit_system || 'kg');
   const [lifeStage, setLifeStage] = useState(profile.life_stage || 'Perimenopause');
-  const [height, setHeight] = useState(profile.height_cm || '');
+  const [height, setHeight] = useState(profile.height_cm ? (toDisplayHeight(profile.height_cm, profile.unit_system) || '').toString().slice(0, 6) : '');
   const [age, setAge] = useState(profile.age || '');
-  const [startWeight, setStartWeight] = useState(toDisplayWeight(profile.start_weight_kg, profile.unit_system) || '');
-  const [goalWeight, setGoalWeight] = useState(toDisplayWeight(profile.goal_weight_kg, profile.unit_system) || '');
+  const [startWeight, setStartWeight] = useState(profile.start_weight_kg ? fmt1(toDisplayWeight(profile.start_weight_kg, profile.unit_system)) : '');
+  const [goalWeight, setGoalWeight] = useState(profile.goal_weight_kg ? fmt1(toDisplayWeight(profile.goal_weight_kg, profile.unit_system)) : '');
   const [goalDate, setGoalDate] = useState(profile.goal_date || '');
   const [trackCycle, setTrackCycle] = useState(!!profile.track_cycle);
   const [regularity, setRegularity] = useState(profile.cycle_regularity || 'Regular');
@@ -1374,7 +1824,7 @@ function SettingsView({ profile, onUpdate }) {
   const [periodLength, setPeriodLength] = useState(profile.period_length || 5);
   const [baselineSteps, setBaselineSteps] = useState(profile.baseline_steps || 8000);
   const [proteinTarget, setProteinTarget] = useState(profile.protein_target || 110);
-  const [waterTarget, setWaterTarget] = useState(profile.water_target || 2.5);
+  const [waterTarget, setWaterTarget] = useState(profile.water_target ? fmt1(toDisplayWater(profile.water_target, profile.unit_system)) : (isImperial(profile.unit_system) ? '84' : '2.5'));
   const [sleepTarget, setSleepTarget] = useState(profile.sleep_target || 7.5);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
@@ -1386,7 +1836,7 @@ function SettingsView({ profile, onUpdate }) {
     setSaving(true);
     const patch = {
       name, unit_system: unit, life_stage: lifeStage,
-      height_cm: height ? Number(height) : null,
+      height_cm: fromDisplayHeight(height, unit),
       age: age ? Number(age) : null,
       start_weight_kg: fromDisplayWeight(startWeight, unit),
       goal_weight_kg: fromDisplayWeight(goalWeight, unit),
@@ -1399,7 +1849,7 @@ function SettingsView({ profile, onUpdate }) {
       period_length: Number(periodLength),
       baseline_steps: Number(baselineSteps),
       protein_target: Number(proteinTarget),
-      water_target: Number(waterTarget),
+      water_target: fromDisplayWater(waterTarget, unit),
       sleep_target: Number(sleepTarget),
     };
     const { error } = await db.from('profiles').update(patch).eq('user_id', profile.user_id);
@@ -1423,24 +1873,25 @@ function SettingsView({ profile, onUpdate }) {
               <option>Pre-menopause</option><option>Perimenopause</option><option>Post-menopause</option>
             </select>
           </div>
-          <div><div className="field-label">Height (cm)</div><input type="number" className="input" value={height} onChange={(e) => setHeight(e.target.value)} /></div>
+          <div><div className="field-label">Height ({heightUnit(unit)})</div><input type="number" step="0.1" className="input" value={height} onChange={(e) => setHeight(e.target.value)} /></div>
           <div><div className="field-label">Age</div><input type="number" className="input" value={age} onChange={(e) => setAge(e.target.value)} /></div>
         </div>
       </div>
 
       <div className="card" style={{ marginBottom: 14 }}>
-        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, color: 'var(--teal)' }}>Units</h3>
-        <div style={{ display: 'flex', gap: 8, maxWidth: 280 }}>
-          <PillBtn active={unit === 'kg'} onClick={() => setUnit('kg')}>kg</PillBtn>
-          <PillBtn active={unit === 'lbs'} onClick={() => setUnit('lbs')}>lbs</PillBtn>
+        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 6, color: 'var(--teal)' }}>Units</h3>
+        <p style={{ fontSize: 12, color: 'var(--text-mute)', marginBottom: 12 }}>Switch between metric (kg, cm, L) and imperial (lbs, in, fl oz). Affects everywhere.</p>
+        <div style={{ display: 'flex', gap: 8, maxWidth: 320 }}>
+          <PillBtn active={!isImperial(unit)} onClick={() => setUnit('kg')}>Metric</PillBtn>
+          <PillBtn active={isImperial(unit)} onClick={() => setUnit('lbs')}>Imperial</PillBtn>
         </div>
       </div>
 
       <div className="card" style={{ marginBottom: 14 }}>
         <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, color: 'var(--teal)' }}>Goal</h3>
         <div className="row row-3">
-          <div><div className="field-label">Start weight ({unit})</div><input type="number" step="0.1" className="input" value={startWeight} onChange={(e) => setStartWeight(e.target.value)} /></div>
-          <div><div className="field-label">Goal weight ({unit})</div><input type="number" step="0.1" className="input" value={goalWeight} onChange={(e) => setGoalWeight(e.target.value)} /></div>
+          <div><div className="field-label">Start weight ({weightUnit(unit)})</div><input type="number" step="0.1" className="input" value={startWeight} onChange={(e) => setStartWeight(e.target.value)} /></div>
+          <div><div className="field-label">Goal weight ({weightUnit(unit)})</div><input type="number" step="0.1" className="input" value={goalWeight} onChange={(e) => setGoalWeight(e.target.value)} /></div>
           <div><div className="field-label">Deadline</div><input type="date" className="input" value={goalDate} onChange={(e) => setGoalDate(e.target.value)} /></div>
         </div>
       </div>
@@ -1489,7 +1940,7 @@ function SettingsView({ profile, onUpdate }) {
         <div className="row row-4">
           <div><div className="field-label">Steps</div><input type="number" className="input" value={baselineSteps} onChange={(e) => setBaselineSteps(e.target.value)} /></div>
           <div><div className="field-label">Protein (g)</div><input type="number" className="input" value={proteinTarget} onChange={(e) => setProteinTarget(e.target.value)} /></div>
-          <div><div className="field-label">Water (L)</div><input type="number" step="0.1" className="input" value={waterTarget} onChange={(e) => setWaterTarget(e.target.value)} /></div>
+          <div><div className="field-label">Water ({waterUnit(unit)})</div><input type="number" step="0.1" className="input" value={waterTarget} onChange={(e) => setWaterTarget(e.target.value)} /></div>
           <div><div className="field-label">Sleep (hrs)</div><input type="number" step="0.1" className="input" value={sleepTarget} onChange={(e) => setSleepTarget(e.target.value)} /></div>
         </div>
       </div>
@@ -1497,6 +1948,22 @@ function SettingsView({ profile, onUpdate }) {
       <button onClick={save} disabled={saving} className="btn" style={{ width: '100%', padding: 14 }}>
         {saving ? 'Saving…' : savedAt ? '✓ Saved' : 'Save changes'}
       </button>
+
+      <div className="card" style={{ marginTop: 28, background: 'var(--surface-2)' }}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: 'var(--text-mute)' }}>Important — please read</h3>
+        <p style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.65, marginBottom: 10 }}>
+          This app provides general information based on the data you log. It is <strong>not medical advice</strong> and does not replace consultation with a doctor, registered dietitian, or qualified healthcare provider.
+        </p>
+        <p style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.65, marginBottom: 10 }}>
+          The recommendations are educational and based on general research on women's physiology, training, and nutrition. They are not personalised medical guidance.
+        </p>
+        <p style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.65, marginBottom: 10 }}>
+          If you're managing a medical condition, taking medication, pregnant, or have concerns about your hormones, training, or nutrition, please speak to your healthcare provider before making changes.
+        </p>
+        <p style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.65 }}>
+          Hormonal symptoms, irregular bleeding, severe fatigue, sudden weight changes, or anything that worries you should always be discussed with a doctor.
+        </p>
+      </div>
     </div>
   );
 }
@@ -1556,6 +2023,9 @@ function App() {
         {view === 'trends' && <WeightTrends profile={profile} logs={logs} />}
         {view === 'recovery' && <RecoveryView profile={profile} logs={logs} />}
         {view === 'settings' && <SettingsView profile={profile} onUpdate={loadData} />}
+        <div style={{ marginTop: 48, paddingTop: 20, borderTop: '1px solid var(--divider)', textAlign: 'center', fontSize: 11, color: 'var(--text-faint)', lineHeight: 1.6 }}>
+          Educational use only — not medical advice. <button onClick={() => setView('settings')} style={{ background: 'transparent', border: 'none', color: 'var(--teal)', fontSize: 11, cursor: 'pointer', textDecoration: 'underline' }}>Full disclaimer in Settings</button>
+        </div>
       </main>
     </div>
   );
