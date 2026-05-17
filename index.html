@@ -688,6 +688,92 @@ function generateInsights(logs, profile) {
 }
 
 // ============================================================
+// BEHAVIOUR SCORECARD — ranks habits by how strongly each correlates with YOUR weight loss
+// Returns a list of { habit, impact, direction, observation, dataPoints }
+// ============================================================
+function behaviourScorecard(logs, profile) {
+  if (logs.length < 7) return { items: [], ready: false, daysNeeded: 7 - logs.length };
+  const unit = profile.unit_system || 'kg';
+
+  // Build pairs of [habit value, next-morning weight change]
+  // For each day with a weight reading the next morning, link it to the habit value
+  const pairs = (key, filterFn = null) => {
+    const out = [];
+    for (let i = 0; i < logs.length - 1; i++) {
+      const v = logs[i][key];
+      const wNow = logs[i].weight_kg;
+      const wNext = logs[i+1].weight_kg;
+      if (v === null || v === undefined || v === '' || isNaN(v)) continue;
+      if (!wNow || !wNext) continue;
+      if (filterFn && !filterFn(v)) continue;
+      out.push({ v: Number(v), dw: wNext - wNow });
+    }
+    return out;
+  };
+
+  const analyze = (habitName, key, opts = {}) => {
+    const { threshold, higherIsBetter = true, unitLabel = '', isCount = false } = opts;
+    const all = pairs(key);
+    if (all.length < 5) return null;
+
+    let above, below, splitLabel;
+    if (threshold !== undefined) {
+      above = all.filter(p => p.v >= threshold);
+      below = all.filter(p => p.v < threshold);
+      splitLabel = `≥${threshold}${unitLabel}`;
+    } else {
+      const sorted = [...all].sort((a,b) => a.v - b.v);
+      const mid = sorted[Math.floor(sorted.length / 2)].v;
+      above = all.filter(p => p.v >= mid);
+      below = all.filter(p => p.v < mid);
+      splitLabel = `≥${fmt1(mid)}${unitLabel}`;
+    }
+
+    if (above.length < 2 || below.length < 2) return null;
+
+    const dwAbove = above.reduce((s,p) => s+p.dw, 0) / above.length;
+    const dwBelow = below.reduce((s,p) => s+p.dw, 0) / below.length;
+    // Impact: how much better is the "good" group at moving the scale down?
+    // Negative dw = weight dropped. We want big negative dw on the "better" side.
+    const goodGroup = higherIsBetter ? dwAbove : dwBelow;
+    const badGroup  = higherIsBetter ? dwBelow : dwAbove;
+    const diff = badGroup - goodGroup; // positive = the good group lost more
+    const impact = diff; // raw kg difference
+
+    // Only include if there's a meaningful gap
+    if (Math.abs(impact) < 0.05) return null;
+
+    return {
+      habit: habitName,
+      impact,
+      helps: impact > 0,
+      goodSplit: higherIsBetter ? `On days ${splitLabel}` : `On days <${threshold || fmt1(all[0].v)}${unitLabel}`,
+      observation: impact > 0
+        ? `${habitName} ${higherIsBetter ? 'high' : 'low'} → ${fmt1(toDisplayWeight(Math.abs(goodGroup), unit))} ${weightUnit(unit)} lighter next morning. ${habitName} ${higherIsBetter ? 'low' : 'high'} → ${badGroup > 0 ? 'weight up' : 'no change'}.`
+        : `${habitName} doesn't seem to move the scale either way for you.`,
+      dataPoints: all.length,
+    };
+  };
+
+  const items = [
+    analyze('Sleep', 'sleep_hours', { threshold: 7.5, unitLabel: 'h', higherIsBetter: true }),
+    analyze('Protein', 'protein_g', { threshold: profile.protein_target || 110, unitLabel: 'g', higherIsBetter: true }),
+    analyze('Steps', 'steps', { threshold: profile.baseline_steps || 8000, higherIsBetter: true }),
+    analyze('Calories burned', 'calories_out', { higherIsBetter: true }),
+    analyze('Alcohol', 'alcohol_units', { threshold: 0.5, unitLabel: 'u', higherIsBetter: false }),
+    analyze('Stress', 'stress', { threshold: 3, higherIsBetter: false }),
+    analyze('Sleep quality', 'sleep_quality', { threshold: 4, higherIsBetter: true }),
+    analyze('Water', 'water_l', { threshold: profile.water_target || 2.5, unitLabel: 'L', higherIsBetter: true }),
+    analyze('Fibre', 'fibre_g', { threshold: 25, unitLabel: 'g', higherIsBetter: true }),
+  ].filter(Boolean);
+
+  // Sort by absolute impact (biggest lever first)
+  items.sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact));
+
+  return { items, ready: true };
+}
+
+// ============================================================
 // PROGRESS METRICS — for keeping users motivated through sparse early weeks
 // ============================================================
 function progressStatus(logs, profile) {
@@ -1924,9 +2010,18 @@ function WeightTrends({ profile, logs }) {
       </div>
 
       <div className="card">
-        <div className="label" style={{ marginBottom: 4 }}>Body water % · 30 days</div>
-        <p style={{ fontSize: 12, color: 'var(--text-mute)', marginBottom: 8 }}>Explains scale spikes — high water = high carb day, salt, or luteal retention.</p>
-        <MultiLineChart series={[{ values: water, color: '#00687a', axis: 'left' }]} h={140} />
+        <div className="label" style={{ marginBottom: 4 }}>Weight × Body water · 30 days</div>
+        <p style={{ fontSize: 12, color: 'var(--text-mute)', marginBottom: 8 }}>When weight spikes line up with body water spikes, it's water, not fat. Watch them move together.</p>
+        <ChartLegend items={[
+          { color: '#00687a', label: `Weight (${weightUnit(unit)})` },
+          { color: '#ff5bcf', label: 'Body water %' },
+        ]} />
+        <div style={{ marginTop: 8 }}>
+          <MultiLineChart series={[
+            { values: weights, color: '#00687a', axis: 'left' },
+            { values: water, color: '#ff5bcf', axis: 'right' },
+          ]} h={160} />
+        </div>
       </div>
     </div>
   );
@@ -2045,40 +2140,71 @@ function RecoveryView({ profile, logs }) {
         </>
       )}
 
-      <div className="row row-2" style={{ marginBottom: 14 }}>
-        <div className="card">
-          <div className="label" style={{ marginBottom: 4 }}>HRV × RHR × Sleep · 14d</div>
-          <ChartLegend items={[
-            { color: '#00687a', label: 'HRV (ms)' },
-            { color: '#ff5bcf', label: 'RHR (bpm)' },
-            { color: '#cfff04', label: 'Sleep (h)' },
-          ]} />
-          <div style={{ marginTop: 6 }}>
-            <MultiLineChart series={[
-              { values: hrv14, color: '#00687a', axis: 'left' },
-              { values: rhr14, color: '#ff5bcf', axis: 'left' },
-              { values: sleep14, color: '#cfff04', axis: 'right' },
-            ]} />
-          </div>
-        </div>
+      {/* Behaviour scorecard — your biggest levers */}
+      <div className="card" style={{ marginBottom: 14, borderLeft: '4px solid var(--teal)' }}>
+        <div className="label" style={{ marginBottom: 4, color: 'var(--teal)' }}>Your biggest levers</div>
+        <p style={{ fontSize: 13, color: 'var(--text-mute)', marginBottom: 14, lineHeight: 1.5 }}>
+          Ranked by how much each habit moves YOUR scale, based on your data. Focus on the top 2-3.
+        </p>
+        {(() => {
+          const scorecard = behaviourScorecard(logs, profile);
+          if (!scorecard.ready) {
+            return (
+              <p style={{ fontSize: 13, color: 'var(--text-mute)', fontStyle: 'italic', padding: '8px 0' }}>
+                Log {scorecard.daysNeeded || 'a few'} more day{scorecard.daysNeeded === 1 ? '' : 's'} of weight + habits to see your ranking.
+              </p>
+            );
+          }
+          if (scorecard.items.length === 0) {
+            return (
+              <p style={{ fontSize: 13, color: 'var(--text-mute)', fontStyle: 'italic', padding: '8px 0' }}>
+                Not enough variation in your habits yet to detect clear winners. Keep logging.
+              </p>
+            );
+          }
+          const max = Math.max(...scorecard.items.map(it => Math.abs(it.impact)));
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {scorecard.items.map((it, i) => {
+                const pct = Math.min(100, (Math.abs(it.impact) / max) * 100);
+                const color = it.helps ? 'var(--success)' : 'var(--pink)';
+                return (
+                  <div key={i}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-mute)', minWidth: 18 }}>#{i+1}</span>
+                        <span style={{ fontSize: 14, fontWeight: 600 }}>{it.habit}</span>
+                        <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>· {it.dataPoints} days</span>
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 700, color }}>
+                        {it.helps ? '−' : '+'}{fmt1(toDisplayWeight(Math.abs(it.impact), profile.unit_system))} {weightUnit(profile.unit_system)}
+                      </span>
+                    </div>
+                    <div style={{ height: 6, background: 'var(--surface-2)', borderRadius: 3, overflow: 'hidden', marginBottom: 6 }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3 }} />
+                    </div>
+                    <p style={{ fontSize: 12, color: 'var(--text-mute)', lineHeight: 1.5, marginLeft: 28 }}>{it.observation}</p>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+      </div>
 
-        <div className="card">
-          <div className="label" style={{ marginBottom: 4 }}>Calories in × out · 14d</div>
-          <ChartLegend items={[
-            { color: '#ff5bcf', label: 'Calories in' },
-            { color: '#00687a', label: 'Calories out' },
-          ]} />
-          <div style={{ marginTop: 6 }}>
-            <MultiLineChart series={[
-              { values: calIn14, color: '#ff5bcf', axis: 'left' },
-              { values: calOut14, color: '#00687a', axis: 'left' },
-            ]} />
-          </div>
-          {deficit !== null && (
-            <p style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 8 }}>
-              Avg deficit: <strong style={{ color: 'var(--teal)' }}>{Math.round(deficit)} kcal/day</strong> from movement, no restriction.
-            </p>
-          )}
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div className="label" style={{ marginBottom: 4 }}>HRV × RHR × Sleep · 14d</div>
+        <ChartLegend items={[
+          { color: '#00687a', label: 'HRV (ms)' },
+          { color: '#ff5bcf', label: 'RHR (bpm)' },
+          { color: '#cfff04', label: 'Sleep (h)' },
+        ]} />
+        <div style={{ marginTop: 6 }}>
+          <MultiLineChart series={[
+            { values: hrv14, color: '#00687a', axis: 'left' },
+            { values: rhr14, color: '#ff5bcf', axis: 'left' },
+            { values: sleep14, color: '#cfff04', axis: 'right' },
+          ]} h={200} />
         </div>
       </div>
 
