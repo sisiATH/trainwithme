@@ -581,12 +581,14 @@ function generateInsights(logs, profile) {
     const mChange = last.muscle_kg - first.muscle_kg;
     if (wChange < -0.3 && mChange >= -0.2) {
       insights.wins.push({
+        scope: 'body',
         headline: `Muscle is holding`,
         detail: `Down ${fmt1(toDisplayWeight(Math.abs(wChange), unit))} ${weightUnit(unit)} since first log, muscle mass stable. That's fat loss, not weight loss. This is the goal.`,
       });
     }
     if (wChange < -0.3 && mChange < -0.3) {
       insights.gaps.push({
+        scope: 'body',
         headline: `Losing muscle, not just fat`,
         detail: `Weight down ${fmt1(toDisplayWeight(Math.abs(wChange), unit))} ${weightUnit(unit)} but muscle down ${fmt1(toDisplayWeight(Math.abs(mChange), unit))} ${weightUnit(unit)}. Eat more protein, lift heavier, or both.`,
       });
@@ -608,6 +610,7 @@ function generateInsights(logs, profile) {
       if (stallSleep && stallSleep < 7) why.push(`sleep averaging ${fmt1(stallSleep)}h`);
       if (stallAlc > 4) why.push(`${stallAlc} units alcohol in the last week`);
       insights.stalls.push({
+        scope: 'body',
         headline: `Weight has stalled for 5+ days`,
         detail: why.length ? `Likely cause: ${why.join('; ')}. Pick one to fix this week.` : 'Numbers look fine — could be water shift. Hold the line for 3-4 more days.',
       });
@@ -623,6 +626,7 @@ function generateInsights(logs, profile) {
       const wChange = wLogs.length >= 2 ? wLogs[wLogs.length-1].weight_kg - wLogs[0].weight_kg : 0;
       if (bfChange < -0.5 && Math.abs(wChange) < 0.3) {
         insights.wins.push({
+          scope: 'body',
           headline: `Body fat down ${fmt1(Math.abs(bfChange))}%, scale flat`,
           detail: `You're losing fat and gaining/holding muscle. The scale lies — body comp is the signal.`,
         });
@@ -673,6 +677,7 @@ function generateInsights(logs, profile) {
     }
     if (wByPhase.Luteal && wByPhase.Follicular && wByPhase.Luteal > wByPhase.Follicular + 0.3) {
       insights.cycle.push({
+        scope: 'body',
         headline: `You weigh more in luteal — that's water`,
         detail: `Average luteal weight is ${fmt1(toDisplayWeight(wByPhase.Luteal - wByPhase.Follicular, unit))} ${weightUnit(unit)} higher than follicular. Hormonal water retention, not fat. Don't panic-restrict.`,
       });
@@ -1110,7 +1115,7 @@ function Sidebar({ view, setView, profile, onSignOut, trialDaysLeft, isPaid }) {
     { id: 'log', label: 'Daily log' },
     { id: 'cycle', label: 'Cycle insights' },
     { id: 'trends', label: 'Weight trends' },
-    { id: 'recovery', label: 'Recovery & training' },
+    { id: 'recovery', label: "What's working" },
     { id: 'settings', label: 'Settings' },
   ];
   return (
@@ -1766,10 +1771,121 @@ function WeightTrends({ profile, logs }) {
   const w28 = avg(logs.slice(-28), 'weight_kg');
   const startW = profile.start_weight_kg;
 
+  // Pull body-comp insights from the engine, plus build extra body-specific ones
+  const allInsights = useMemo(() => generateInsights(logs, profile), [logs, profile]);
+  const bodyInsights = useMemo(() => {
+    const list = [
+      ...allInsights.wins.filter(it => it.scope === 'body'),
+      ...allInsights.gaps.filter(it => it.scope === 'body'),
+      ...allInsights.stalls.filter(it => it.scope === 'body'),
+      ...allInsights.cycle.filter(it => it.scope === 'body'),
+    ];
+
+    // Extra analysis only on Weight trends page
+    if (logs.length >= 7) {
+      // 7-day vs prior 7-day weight trend
+      const last7 = logs.slice(-7).filter(l => l.weight_kg);
+      const prior7 = logs.slice(-14, -7).filter(l => l.weight_kg);
+      if (last7.length >= 3 && prior7.length >= 3) {
+        const a = last7.reduce((s,l)=>s+l.weight_kg,0)/last7.length;
+        const b = prior7.reduce((s,l)=>s+l.weight_kg,0)/prior7.length;
+        const diff = a - b;
+        if (Math.abs(diff) >= 0.15) {
+          list.push({
+            headline: diff < 0 ? `7-day avg is down ${fmt1(toDisplayWeight(Math.abs(diff), unit))} ${weightUnit(unit)}` : `7-day avg is up ${fmt1(toDisplayWeight(diff, unit))} ${weightUnit(unit)}`,
+            detail: diff < 0
+              ? `Your trend line is moving in the right direction. Daily weight will bounce — keep watching the average.`
+              : `Trend line is climbing. Check what changed last week: sleep, alcohol, calories out.`,
+            tone: diff < 0 ? 'good' : 'warn',
+          });
+        }
+      }
+
+      // Body fat trajectory
+      const bfLogs = logs.filter(l => l.body_fat_pct);
+      if (bfLogs.length >= 5) {
+        const bfStart = bfLogs[0].body_fat_pct;
+        const bfNow = bfLogs[bfLogs.length-1].body_fat_pct;
+        const bfDiff = bfNow - bfStart;
+        if (Math.abs(bfDiff) >= 0.3) {
+          list.push({
+            headline: bfDiff < 0 ? `Body fat down ${fmt1(Math.abs(bfDiff))}% since first log` : `Body fat up ${fmt1(bfDiff)}% since first log`,
+            detail: bfDiff < 0
+              ? `Body fat is the real signal — daily scale weight is mostly water. Keep going.`
+              : `Body fat trending up. Check protein, training volume, and sleep — those are your levers.`,
+            tone: bfDiff < 0 ? 'good' : 'warn',
+          });
+        }
+      }
+
+      // Muscle trajectory
+      const mLogs = logs.filter(l => l.muscle_kg);
+      if (mLogs.length >= 5) {
+        const mStart = mLogs[0].muscle_kg;
+        const mNow = mLogs[mLogs.length-1].muscle_kg;
+        const mDiff = mNow - mStart;
+        if (Math.abs(mDiff) >= 0.2) {
+          list.push({
+            headline: mDiff >= 0 ? `Muscle up ${fmt1(toDisplayWeight(mDiff, unit))} ${weightUnit(unit)} since first log` : `Muscle down ${fmt1(toDisplayWeight(Math.abs(mDiff), unit))} ${weightUnit(unit)} since first log`,
+            detail: mDiff >= 0
+              ? `Adding muscle in peri is hard. You're doing the work that protects metabolism long-term.`
+              : `In peri, muscle loss accelerates fat regain. Increase protein, add 2-3 strength sessions/week.`,
+            tone: mDiff >= 0 ? 'good' : 'warn',
+          });
+        }
+      }
+
+      // Body water pattern — explains scale spikes
+      const bwLogs = logs.filter(l => l.body_water_pct).slice(-14);
+      if (bwLogs.length >= 5) {
+        const bwRange = Math.max(...bwLogs.map(l => l.body_water_pct)) - Math.min(...bwLogs.map(l => l.body_water_pct));
+        if (bwRange >= 2) {
+          list.push({
+            headline: `Body water swings ${fmt1(bwRange)}% across days`,
+            detail: `That's normal — it's why daily weight fluctuates. High carb days, salt, alcohol, and luteal phase all push water up. Don't chase it.`,
+            tone: 'neutral',
+          });
+        }
+      }
+    }
+
+    return list;
+  }, [allInsights, logs, profile, unit]);
+
   return (
     <div className="fade-in">
       <h1 className="page-title">Weight trends</h1>
-      <p className="page-sub">Daily weight is noise. Trends are signal.</p>
+      <p className="page-sub">Body composition — what the scale won't tell you alone.</p>
+
+      {/* BODY-COMP INSIGHTS at the top */}
+      {bodyInsights.length === 0 ? (
+        <div className="card-teal" style={{ marginBottom: 14 }}>
+          <div className="label" style={{ color: 'rgba(255,255,255,0.7)', marginBottom: 10 }}>Body composition insights</div>
+          <p style={{ fontSize: 14, opacity: 0.9, lineHeight: 1.6 }}>
+            {logs.length < 5
+              ? `Log weight and body fat ${5 - logs.length > 0 ? `for ${5 - logs.length} more day${5 - logs.length === 1 ? '' : 's'} ` : ''}to start seeing your real trend.`
+              : 'Keep logging weight, body fat, and muscle. Patterns appear once we have ~7 days of complete data.'}
+          </p>
+        </div>
+      ) : (
+        <div className="card-teal" style={{ marginBottom: 14 }}>
+          <div className="label" style={{ color: 'rgba(255,255,255,0.7)', marginBottom: 12 }}>Body composition insights</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {bodyInsights.map((it, i) => {
+              const dotColor = it.tone === 'good' ? 'var(--gold)' : it.tone === 'warn' ? 'var(--pink)' : 'rgba(255,255,255,0.5)';
+              return (
+                <div key={i} style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 10, padding: 14, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: dotColor, marginTop: 8, flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>{it.headline}</div>
+                    <div style={{ fontSize: 13, opacity: 0.9, lineHeight: 1.55 }}>{it.detail}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="row row-4" style={{ marginBottom: 14 }}>
         <div className="card">
@@ -1843,12 +1959,19 @@ function RecoveryView({ profile, logs }) {
   const calOut7 = avg(logs.slice(-7), 'calories_out');
   const deficit = (calIn7 !== null && calOut7 !== null) ? calOut7 - calIn7 : null;
 
-  const totalInsights = insights.gaps.length + insights.wins.length + insights.stalls.length + insights.cycle.length;
+  // Filter to non-body insights (body insights live on Weight trends page)
+  const general = {
+    gaps: insights.gaps.filter(it => it.scope !== 'body'),
+    wins: insights.wins.filter(it => it.scope !== 'body'),
+    stalls: insights.stalls.filter(it => it.scope !== 'body'),
+    cycle: insights.cycle.filter(it => it.scope !== 'body'),
+  };
+  const totalInsights = general.gaps.length + general.wins.length + general.stalls.length + general.cycle.length;
 
   return (
     <div className="fade-in">
-      <h1 className="page-title">Recovery & training</h1>
-      <p className="page-sub">What's helping you make progress.</p>
+      <h1 className="page-title">What's working</h1>
+      <p className="page-sub">Patterns from your sleep, recovery, training, and nutrition.</p>
 
       {/* INSIGHTS — 4 categories: gaps, wins, stalls, cycle */}
       {totalInsights === 0 ? (
@@ -1864,11 +1987,11 @@ function RecoveryView({ profile, logs }) {
         </div>
       ) : (
         <>
-          {insights.gaps.length > 0 && (
+          {general.gaps.length > 0 && (
             <div className="card" style={{ marginBottom: 14, borderLeft: '4px solid var(--pink)' }}>
               <div className="label" style={{ marginBottom: 12, color: 'var(--pink)' }}>What's holding you back</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {insights.gaps.map((it, i) => (
+                {general.gaps.map((it, i) => (
                   <div key={i}>
                     <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{it.headline}</div>
                     <div style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.5 }}>{it.detail}</div>
@@ -1878,11 +2001,11 @@ function RecoveryView({ profile, logs }) {
             </div>
           )}
 
-          {insights.wins.length > 0 && (
+          {general.wins.length > 0 && (
             <div className="card-teal" style={{ marginBottom: 14 }}>
               <div className="label" style={{ color: 'rgba(255,255,255,0.7)', marginBottom: 12 }}>What's working for you</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                {insights.wins.map((it, i) => (
+                {general.wins.map((it, i) => (
                   <div key={i} style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 10, padding: 14 }}>
                     <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>{it.headline}</div>
                     <div style={{ fontSize: 13, opacity: 0.9, lineHeight: 1.5 }}>{it.detail}</div>
@@ -1892,11 +2015,11 @@ function RecoveryView({ profile, logs }) {
             </div>
           )}
 
-          {insights.stalls.length > 0 && (
+          {general.stalls.length > 0 && (
             <div className="card" style={{ marginBottom: 14, borderLeft: '4px solid var(--warn)' }}>
               <div className="label" style={{ marginBottom: 12, color: 'var(--warn)' }}>Plateaus & stalls</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {insights.stalls.map((it, i) => (
+                {general.stalls.map((it, i) => (
                   <div key={i}>
                     <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{it.headline}</div>
                     <div style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.5 }}>{it.detail}</div>
@@ -1906,11 +2029,11 @@ function RecoveryView({ profile, logs }) {
             </div>
           )}
 
-          {insights.cycle.length > 0 && (
+          {general.cycle.length > 0 && (
             <div className="card" style={{ marginBottom: 14, borderLeft: '4px solid var(--teal)' }}>
               <div className="label" style={{ marginBottom: 12, color: 'var(--teal)' }}>Cycle patterns</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {insights.cycle.map((it, i) => (
+                {general.cycle.map((it, i) => (
                   <div key={i}>
                     <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{it.headline}</div>
                     <div style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.5 }}>{it.detail}</div>
