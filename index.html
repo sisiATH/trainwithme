@@ -774,6 +774,294 @@ function behaviourScorecard(logs, profile) {
 }
 
 // ============================================================
+// DIAGNOSE — real analysis of a day or week's data
+// Returns plain-English diagnostic messages explaining what's working and what isn't
+// Used by dashboard's "Today's prompt" and the Review tab
+// ============================================================
+function diagnoseDay(log, profile, recentLogs) {
+  if (!log) return [];
+  const unit = profile.unit_system || 'kg';
+  const out = [];
+
+  const calIn = log.calories_in;
+  const calOut = log.calories_out;
+  const deficit = (calIn && calOut) ? calOut - calIn : null;
+  const protein = log.protein_g;
+  const carbs = log.carbs_g;
+  const fat = log.fat_g;
+  const water = log.water_l;
+  const steps = log.steps;
+  const sleep = log.sleep_hours;
+  const hrv = log.hrv;
+  const totalMacroCal = (protein||0) * 4 + (carbs||0) * 4 + (fat||0) * 9;
+  const fatPct = totalMacroCal > 0 && fat ? (fat * 9) / totalMacroCal * 100 : null;
+
+  // Has weight stalled? Compare last 5 days
+  const recentWeights = recentLogs.filter(l => l.weight_kg).slice(-5).map(l => l.weight_kg);
+  const stalled = recentWeights.length >= 3 && (Math.max(...recentWeights) - Math.min(...recentWeights)) < 0.4;
+
+  // 1. DEFICIT ANALYSIS
+  if (deficit !== null) {
+    if (deficit < 200) {
+      out.push({
+        type: 'deficit',
+        tone: 'warn',
+        headline: `Deficit only ${Math.round(deficit)} kcal`,
+        detail: `Too small to overcome daily water variation. To lose ${profile.unit_system === 'lbs' ? '1 lb' : '0.5kg'}/week you need ~500 kcal deficit daily. Don't drop intake — increase output.`,
+      });
+    } else if (deficit < 400 && stalled) {
+      out.push({
+        type: 'deficit',
+        tone: 'warn',
+        headline: `Deficit of ${Math.round(deficit)} kcal isn't moving the scale`,
+        detail: `Weight stable past few days. Two options: more movement (zone 2, walking, NEAT) — not eating less. If you're already hungry at this intake, restricting more risks muscle and rebound.`,
+      });
+    } else if (deficit >= 400 && deficit <= 700) {
+      out.push({
+        type: 'deficit',
+        tone: 'good',
+        headline: `Deficit of ${Math.round(deficit)} kcal — sustainable range`,
+        detail: `This is the healthy fat-loss zone (0.5-1% bodyweight/week). Hold steady.`,
+      });
+    } else if (deficit > 800) {
+      out.push({
+        type: 'deficit',
+        tone: 'warn',
+        headline: `Deficit of ${Math.round(deficit)} kcal — too aggressive`,
+        detail: `Sustained deficits >800 kcal in peri cause muscle loss, drop NEAT, and tank recovery. Eat more — especially around training.`,
+      });
+    }
+  }
+
+  // 2. HUNGER + STALL: high movement, near-maintenance intake, no weight movement
+  if (calIn && calOut && deficit !== null && deficit > 0 && deficit < 500 && stalled && steps && steps > 12000) {
+    out.push({
+      type: 'lever',
+      tone: 'info',
+      headline: `Your steps are doing the work — something else is the limit`,
+      detail: `${steps.toLocaleString()} steps is real output. With a small deficit and a flat scale, the limiter is usually one of: water (you logged ${water ? fmt1(toDisplayWater(water, unit)) + ' ' + waterUnit(unit) : 'no water'}), sleep, hormonal water retention, or you need a slightly larger deficit from output, not food.`,
+    });
+  }
+
+  // 3. WATER UNDER 70% of target
+  if (water !== null && water !== undefined && profile.water_target && water < profile.water_target * 0.7) {
+    const gap = profile.water_target - water;
+    out.push({
+      type: 'water',
+      tone: 'warn',
+      headline: `Water is low — ${fmt1(toDisplayWater(water, unit))} ${waterUnit(unit)}`,
+      detail: `Target is ${fmt1(toDisplayWater(profile.water_target, unit))} ${waterUnit(unit)}. Dehydration suppresses fat oxidation and increases hunger signal. Single biggest free lever today: drink ${fmt1(toDisplayWater(gap, unit))} more ${waterUnit(unit)}.`,
+    });
+  }
+
+  // 4. MACRO RATIO: fat too high relative to carbs (peri-specific — carbs around training matter)
+  if (fatPct !== null && fatPct > 38 && carbs && carbs < 200) {
+    out.push({
+      type: 'macros',
+      tone: 'info',
+      headline: `Fat is ${Math.round(fatPct)}% of calories — try shifting to carbs around training`,
+      detail: `In peri, carbs around training improve recovery and protect muscle. Try moving ~20g fat to ~45g carbs pre/post your next session. Same calories, better partitioning.`,
+    });
+  }
+
+  // 5. PROTEIN PRAISE (if hit)
+  if (protein && profile.protein_target && protein >= profile.protein_target) {
+    // Don't bombard — only mention if it's a standout
+    const bw = log.weight_kg || profile.start_weight_kg;
+    if (bw && protein / bw >= 1.8) {
+      out.push({
+        type: 'protein',
+        tone: 'good',
+        headline: `${protein}g protein — ${fmt1(protein/bw)}g per kg`,
+        detail: `Above the 1.6g/kg threshold for muscle protection in peri. This is the lever that lets you lose fat without losing strength.`,
+      });
+    }
+  }
+
+  // 6. PROTEIN MISS
+  if (protein !== null && protein !== undefined && profile.protein_target && protein < profile.protein_target * 0.8) {
+    out.push({
+      type: 'protein',
+      tone: 'warn',
+      headline: `Protein low — ${protein}g (target ${profile.protein_target}g)`,
+      detail: `Under-eating protein in peri = muscle loss + slower metabolism. Non-negotiable lever. Add a protein-forward snack (whey shake, Greek yoghurt, eggs).`,
+    });
+  }
+
+  // 7. SLEEP DEBT
+  if (sleep !== null && sleep !== undefined && sleep < 6.5) {
+    out.push({
+      type: 'sleep',
+      tone: 'warn',
+      headline: `Sleep was ${fmt1(sleep)}h — too short`,
+      detail: `Under 7h elevates cortisol, raises hunger hormones (ghrelin), and drops NEAT next day by 15-20%. This is likely cascading through your numbers.`,
+    });
+  }
+
+  // 8. HRV DROP vs baseline
+  const hrvAvg = avg(recentLogs.slice(-14), 'hrv');
+  if (hrv && hrvAvg && hrv < hrvAvg * 0.85) {
+    let cause = '';
+    if (log.alcohol_units > 0) cause = ` Likely the alcohol last night.`;
+    else if (sleep && sleep < 7) cause = ` Likely the short sleep.`;
+    else if (log.stress >= 4) cause = ` Stress was high.`;
+    out.push({
+      type: 'recovery',
+      tone: 'warn',
+      headline: `HRV is ${Math.round(((hrvAvg - hrv) / hrvAvg) * 100)}% below your baseline`,
+      detail: `Recovery is down today.${cause} Don't push intensity — zone 2 or rest. Your body is asking for time.`,
+    });
+  }
+
+  return out;
+}
+
+// Aggregate diagnosis for a date range (used by Review tab)
+function diagnoseRange(logs, profile, label) {
+  if (logs.length === 0) return [];
+  const unit = profile.unit_system || 'kg';
+  const out = [];
+
+  const avgCalIn = avg(logs, 'calories_in');
+  const avgCalOut = avg(logs, 'calories_out');
+  const avgDeficit = (avgCalIn && avgCalOut) ? avgCalOut - avgCalIn : null;
+  const avgSteps = avg(logs, 'steps');
+  const avgSleep = avg(logs, 'sleep_hours');
+  const avgProtein = avg(logs, 'protein_g');
+  const avgWater = avg(logs, 'water_l');
+  const totalAlcohol = logs.reduce((s,l) => s + (l.alcohol_units || 0), 0);
+
+  // Weight trajectory
+  const wLogs = logs.filter(l => l.weight_kg);
+  if (wLogs.length >= 2) {
+    const wChange = wLogs[wLogs.length-1].weight_kg - wLogs[0].weight_kg;
+    if (Math.abs(wChange) >= 0.2) {
+      out.push({
+        type: 'trajectory',
+        tone: wChange < 0 ? 'good' : 'neutral',
+        headline: wChange < 0 ? `Weight down ${fmt1(toDisplayWeight(Math.abs(wChange), unit))} ${weightUnit(unit)} ${label}` : `Weight up ${fmt1(toDisplayWeight(wChange, unit))} ${weightUnit(unit)} ${label}`,
+        detail: wChange < 0
+          ? `Trend is moving. Hold the levers that got you here.`
+          : `Could be water (alcohol, sodium, luteal) or genuine. Check the body-fat trend on Weight trends to know.`,
+      });
+    } else {
+      out.push({
+        type: 'trajectory',
+        tone: 'neutral',
+        headline: `Weight held steady ${label}`,
+        detail: `Sometimes that's the win, sometimes that's a stall. Look at the levers below.`,
+      });
+    }
+  }
+
+  // Deficit story
+  if (avgDeficit !== null) {
+    if (avgDeficit < 200) {
+      out.push({
+        type: 'lever',
+        tone: 'warn',
+        headline: `Average daily deficit only ${Math.round(avgDeficit)} kcal`,
+        detail: `Too small to drive consistent weight loss. The fix is more output (steps, zone 2, NEAT), not less food.`,
+      });
+    } else if (avgDeficit > 800) {
+      out.push({
+        type: 'lever',
+        tone: 'warn',
+        headline: `Average daily deficit ${Math.round(avgDeficit)} kcal — too aggressive ${label}`,
+        detail: `Sustained over weeks this drops muscle and metabolic rate. Eat more, especially around training.`,
+      });
+    } else {
+      out.push({
+        type: 'lever',
+        tone: 'good',
+        headline: `Avg deficit ${Math.round(avgDeficit)} kcal ${label} — sustainable range`,
+        detail: `This is where healthy fat loss happens. Stay here.`,
+      });
+    }
+  }
+
+  // Sleep summary
+  if (avgSleep !== null) {
+    if (avgSleep < 7) {
+      out.push({
+        type: 'sleep',
+        tone: 'warn',
+        headline: `Average sleep ${fmt1(avgSleep)}h ${label}`,
+        detail: `Sleep is your single biggest free lever. Under 7h consistently is the most common reason "the diet isn't working."`,
+      });
+    } else if (avgSleep >= 7.5) {
+      out.push({
+        type: 'sleep',
+        tone: 'good',
+        headline: `Sleep averaging ${fmt1(avgSleep)}h ${label}`,
+        detail: `This is the foundation. Keep protecting it.`,
+      });
+    }
+  }
+
+  // Water summary
+  if (avgWater !== null && profile.water_target && avgWater < profile.water_target * 0.75) {
+    out.push({
+      type: 'water',
+      tone: 'warn',
+      headline: `Water averaging ${fmt1(toDisplayWater(avgWater, unit))} ${waterUnit(unit)} ${label}`,
+      detail: `Target is ${fmt1(toDisplayWater(profile.water_target, unit))} ${waterUnit(unit)}. Hydration affects fat oxidation, hunger, and HRV.`,
+    });
+  }
+
+  // Protein adequacy
+  if (avgProtein !== null && profile.protein_target) {
+    const hitPct = logs.filter(l => l.protein_g && l.protein_g >= profile.protein_target).length / logs.filter(l => l.protein_g).length * 100;
+    if (hitPct >= 80) {
+      out.push({
+        type: 'protein',
+        tone: 'good',
+        headline: `Hit protein target ${Math.round(hitPct)}% of logged days`,
+        detail: `This protects muscle through fat loss. Critical in peri.`,
+      });
+    } else if (hitPct < 50) {
+      out.push({
+        type: 'protein',
+        tone: 'warn',
+        headline: `Hit protein only ${Math.round(hitPct)}% of days`,
+        detail: `Under-eating protein is the fastest way to lose muscle alongside fat. In peri this accelerates regain.`,
+      });
+    }
+  }
+
+  // Steps
+  if (avgSteps !== null && profile.baseline_steps) {
+    if (avgSteps >= profile.baseline_steps) {
+      out.push({
+        type: 'steps',
+        tone: 'good',
+        headline: `Averaging ${fmt0(avgSteps)} steps/day ${label}`,
+        detail: `NEAT is where the deficit lives — not the gym. Keep this up.`,
+      });
+    } else if (avgSteps < profile.baseline_steps * 0.7) {
+      out.push({
+        type: 'steps',
+        tone: 'warn',
+        headline: `Steps averaged ${fmt0(avgSteps)} ${label}`,
+        detail: `Well below baseline. Easiest lever to increase deficit without restricting food.`,
+      });
+    }
+  }
+
+  // Alcohol
+  if (totalAlcohol > 7) {
+    out.push({
+      type: 'alcohol',
+      tone: 'warn',
+      headline: `${totalAlcohol} units of alcohol ${label}`,
+      detail: `Alcohol suppresses fat oxidation for 36+ hours, tanks HRV, fragments sleep. The single biggest hidden weight-loss blocker.`,
+    });
+  }
+
+  return out;
+}
+
+// ============================================================
 // PROGRESS METRICS — for keeping users motivated through sparse early weeks
 // ============================================================
 function progressStatus(logs, profile) {
@@ -1199,6 +1487,7 @@ function Sidebar({ view, setView, profile, onSignOut, trialDaysLeft, isPaid }) {
   const items = [
     { id: 'dashboard', label: 'Dashboard' },
     { id: 'log', label: 'Daily log' },
+    { id: 'review', label: 'Review' },
     { id: 'cycle', label: 'Cycle insights' },
     { id: 'trends', label: 'Weight trends' },
     { id: 'recovery', label: "What's working" },
@@ -1269,6 +1558,7 @@ function Dashboard({ profile, logs, todayLog, setView }) {
   const focus = todaysFocus({ recovery, phase, todayLog, profile, baselines });
   const progress = progressStatus(logs, profile);
   const changes = whatChanged(logs, profile, todayLog);
+  const diagnosis = useMemo(() => diagnoseDay(todayLog, profile, logs), [todayLog, profile, logs]);
 
   return (
     <div className="fade-in">
@@ -1353,6 +1643,27 @@ function Dashboard({ profile, logs, todayLog, setView }) {
               <button onClick={() => setView('log')} className="btn-ghost" style={{ padding: '8px 16px', fontSize: 12 }}>Open daily log</button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Today's diagnosis — real analysis of what your data says */}
+      {diagnosis.length > 0 && (
+        <div className="card" style={{ marginBottom: 16, borderLeft: '4px solid var(--teal)' }}>
+          <div className="label" style={{ marginBottom: 12, color: 'var(--teal)' }}>What your numbers say today</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {diagnosis.slice(0, 4).map((d, i) => {
+              const accent = d.tone === 'good' ? 'var(--success)' : d.tone === 'warn' ? 'var(--pink)' : 'var(--teal)';
+              return (
+                <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: accent, marginTop: 8, flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 3 }}>{d.headline}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.55 }}>{d.detail}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -2414,6 +2725,181 @@ function SettingsView({ profile, onUpdate }) {
 }
 
 // ============================================================
+// REVIEW — Week / Month / All-time retrospective analysis
+// ============================================================
+function ReviewView({ profile, logs }) {
+  const unit = profile.unit_system || 'kg';
+  const [scope, setScope] = useState('week');
+
+  // Filter logs by scope
+  const scopedLogs = useMemo(() => {
+    if (scope === 'all') return logs;
+    const days = scope === 'week' ? 7 : 30;
+    const cutoff = ymd(new Date(today().getTime() - days * 86400000));
+    return logs.filter(l => l.date >= cutoff);
+  }, [logs, scope]);
+
+  const label = scope === 'week' ? 'this week' : scope === 'month' ? 'this month' : 'overall';
+  const diagnosis = useMemo(() => diagnoseRange(scopedLogs, profile, label), [scopedLogs, profile, label]);
+
+  // Summary stats
+  const wLogs = scopedLogs.filter(l => l.weight_kg);
+  const startWeight = wLogs.length > 0 ? wLogs[0].weight_kg : null;
+  const endWeight = wLogs.length > 0 ? wLogs[wLogs.length - 1].weight_kg : null;
+  const weightChange = (startWeight && endWeight) ? endWeight - startWeight : null;
+
+  const bfLogs = scopedLogs.filter(l => l.body_fat_pct);
+  const bfChange = bfLogs.length >= 2 ? bfLogs[bfLogs.length-1].body_fat_pct - bfLogs[0].body_fat_pct : null;
+
+  const mLogs = scopedLogs.filter(l => l.muscle_kg);
+  const mChange = mLogs.length >= 2 ? mLogs[mLogs.length-1].muscle_kg - mLogs[0].muscle_kg : null;
+
+  const avgSleep = avg(scopedLogs, 'sleep_hours');
+  const avgSteps = avg(scopedLogs, 'steps');
+  const avgProtein = avg(scopedLogs, 'protein_g');
+  const totalSessions = scopedLogs.reduce((s,l) => s + ((l.sessions || []).length), 0);
+
+  // Group diagnoses by tone
+  const wins = diagnosis.filter(d => d.tone === 'good');
+  const blocks = diagnosis.filter(d => d.tone === 'warn');
+  const neutral = diagnosis.filter(d => d.tone === 'neutral' || d.tone === 'info');
+
+  return (
+    <div className="fade-in">
+      <h1 className="page-title">Review</h1>
+      <p className="page-sub">What your data says. Switch the time scope to see different stories.</p>
+
+      {/* Scope toggle */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 18, maxWidth: 400 }}>
+        {[
+          { id: 'week', label: 'Week' },
+          { id: 'month', label: 'Month' },
+          { id: 'all', label: 'All time' },
+        ].map(s => (
+          <button
+            key={s.id}
+            onClick={() => setScope(s.id)}
+            style={{
+              flex: 1, padding: '10px 14px', borderRadius: 8,
+              background: scope === s.id ? 'var(--teal)' : 'white',
+              color: scope === s.id ? 'white' : 'var(--text)',
+              border: `1px solid ${scope === s.id ? 'var(--teal)' : 'var(--border)'}`,
+              fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            }}
+          >{s.label}</button>
+        ))}
+      </div>
+
+      {scopedLogs.length === 0 ? (
+        <div className="card-teal">
+          <p style={{ fontSize: 14, opacity: 0.9, lineHeight: 1.6 }}>
+            Nothing logged {label}. Open the Daily log to start.
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* Headline metrics */}
+          <div className="row row-4" style={{ marginBottom: 14 }}>
+            <div className="card">
+              <div className="label">Days logged</div>
+              <div className="stat-num-sm" style={{ marginTop: 8 }}>{scopedLogs.length}</div>
+            </div>
+            <div className="card">
+              <div className="label">Weight change</div>
+              <div className="stat-num-sm" style={{ marginTop: 8, color: weightChange !== null && weightChange < 0 ? 'var(--success)' : 'var(--text)' }}>
+                {weightChange === null ? '–' : `${weightChange > 0 ? '+' : ''}${fmt1(toDisplayWeight(weightChange, unit))} ${weightUnit(unit)}`}
+              </div>
+            </div>
+            <div className="card">
+              <div className="label">Body fat change</div>
+              <div className="stat-num-sm" style={{ marginTop: 8, color: bfChange !== null && bfChange < 0 ? 'var(--success)' : 'var(--text)' }}>
+                {bfChange === null ? '–' : `${bfChange > 0 ? '+' : ''}${fmt1(bfChange)}%`}
+              </div>
+            </div>
+            <div className="card">
+              <div className="label">Sessions</div>
+              <div className="stat-num-sm" style={{ marginTop: 8 }}>{totalSessions}</div>
+            </div>
+          </div>
+
+          <div className="row row-4" style={{ marginBottom: 22 }}>
+            <div className="card-soft">
+              <div className="label">Muscle change</div>
+              <div className="stat-num-sm" style={{ marginTop: 8, color: mChange !== null && mChange >= 0 ? 'var(--success)' : 'var(--pink)' }}>
+                {mChange === null ? '–' : `${mChange > 0 ? '+' : ''}${fmt1(toDisplayWeight(mChange, unit))} ${weightUnit(unit)}`}
+              </div>
+            </div>
+            <div className="card-soft">
+              <div className="label">Avg sleep</div>
+              <div className="stat-num-sm" style={{ marginTop: 8 }}>{avgSleep ? fmt1(avgSleep) + 'h' : '–'}</div>
+            </div>
+            <div className="card-soft">
+              <div className="label">Avg steps</div>
+              <div className="stat-num-sm" style={{ marginTop: 8 }}>{avgSteps ? fmt0(avgSteps) : '–'}</div>
+            </div>
+            <div className="card-soft">
+              <div className="label">Avg protein</div>
+              <div className="stat-num-sm" style={{ marginTop: 8 }}>{avgProtein ? fmt0(avgProtein) + 'g' : '–'}</div>
+            </div>
+          </div>
+
+          {/* Diagnosis groups */}
+          {wins.length > 0 && (
+            <div className="card-teal" style={{ marginBottom: 14 }}>
+              <div className="label" style={{ color: 'rgba(255,255,255,0.7)', marginBottom: 14 }}>What you got right {label}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {wins.map((d, i) => (
+                  <div key={i} style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 10, padding: 14 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{d.headline}</div>
+                    <div style={{ fontSize: 13, opacity: 0.9, lineHeight: 1.5 }}>{d.detail}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {blocks.length > 0 && (
+            <div className="card" style={{ marginBottom: 14, borderLeft: '4px solid var(--pink)' }}>
+              <div className="label" style={{ marginBottom: 14, color: 'var(--pink)' }}>Where the friction is</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {blocks.map((d, i) => (
+                  <div key={i}>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{d.headline}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.5 }}>{d.detail}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {neutral.length > 0 && (
+            <div className="card" style={{ marginBottom: 14, borderLeft: '4px solid var(--teal)' }}>
+              <div className="label" style={{ marginBottom: 14, color: 'var(--teal)' }}>Notes</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {neutral.map((d, i) => (
+                  <div key={i}>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{d.headline}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.5 }}>{d.detail}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {diagnosis.length === 0 && (
+            <div className="card">
+              <p style={{ fontSize: 14, color: 'var(--text-mute)', lineHeight: 1.6 }}>
+                Not enough complete data {label} to diagnose patterns. Keep logging — sleep, water, protein, calories all need to be filled in for the engine to read between them.
+              </p>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
 // APP ROOT
 // ============================================================
 function App() {
@@ -2464,6 +2950,7 @@ function App() {
       <main className="main">
         {view === 'dashboard' && <Dashboard profile={profile} logs={logs} todayLog={todayLog} setView={setView} />}
         {view === 'log' && <DailyLog profile={profile} logs={logs} todayLog={todayLog} onLogSaved={loadData} />}
+        {view === 'review' && <ReviewView profile={profile} logs={logs} />}
         {view === 'cycle' && <CycleInsights profile={profile} logs={logs} />}
         {view === 'trends' && <WeightTrends profile={profile} logs={logs} />}
         {view === 'recovery' && <RecoveryView profile={profile} logs={logs} />}
