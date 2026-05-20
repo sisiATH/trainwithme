@@ -854,13 +854,15 @@ function diagnoseDay(log, profile, recentLogs) {
     });
   }
 
-  // 4. MACRO RATIO: fat too high relative to carbs (peri-specific — carbs around training matter)
-  if (fatPct !== null && fatPct > 38 && carbs && carbs < 200) {
+  // 4. CARBS AROUND TRAINING (only flag if she trained AND carbs were low — not about fat being high)
+  // Healthy fats are essential for hormones in peri. The issue is carb adequacy around training, not fat amount.
+  const trainedHard = (log.sessions || []).some(s => ['Strength', 'HIIT', 'Long endurance', 'Football', 'Run'].includes(s.type) && s.duration >= 30);
+  if (trainedHard && carbs !== null && carbs !== undefined && log.weight_kg && carbs / log.weight_kg < 2.5) {
     out.push({
       type: 'macros',
       tone: 'info',
-      headline: `Fat is ${Math.round(fatPct)}% of calories — try shifting to carbs around training`,
-      detail: `In peri, carbs around training improve recovery and protect muscle. Try moving ~20g fat to ~45g carbs pre/post your next session. Same calories, better partitioning.`,
+      headline: `Carbs (${carbs}g) low for the training you did today`,
+      detail: `For ${log.weight_kg}kg with intense training, aim for ~${Math.round(log.weight_kg * 3)}g+ carbs. Healthy fats are non-negotiable for hormones — don't cut them. Add carbs around training sessions.`,
     });
   }
 
@@ -1487,10 +1489,9 @@ function Sidebar({ view, setView, profile, onSignOut, trialDaysLeft, isPaid }) {
   const items = [
     { id: 'dashboard', label: 'Dashboard' },
     { id: 'log', label: 'Daily log' },
-    { id: 'review', label: 'Review' },
+    { id: 'coach', label: 'Coach' },
     { id: 'cycle', label: 'Cycle insights' },
     { id: 'trends', label: 'Weight trends' },
-    { id: 'recovery', label: "What's working" },
     { id: 'settings', label: 'Settings' },
   ];
   return (
@@ -2900,6 +2901,487 @@ function ReviewView({ profile, logs }) {
 }
 
 // ============================================================
+// COACH — merged Review + What's working + Goals picker
+// 4 modes: Week / Month / All time / Goals
+// ============================================================
+
+// Goal-driven personalised analyses (no AI — uses her data + research-based protocols)
+const COACH_GOALS = [
+  { id: 'muscle', label: 'Increase muscle mass', icon: '💪' },
+  { id: 'stall', label: 'Break a weight stall', icon: '⚡' },
+  { id: 'fatloss', label: 'Lose fat without losing muscle', icon: '🔥' },
+  { id: 'sleep', label: 'Sleep better', icon: '🌙' },
+  { id: 'luteal', label: 'Get through luteal week', icon: '🌗' },
+  { id: 'energy', label: 'More energy + better recovery', icon: '⚡' },
+  { id: 'hunger', label: 'Manage hunger without restriction', icon: '🍽️' },
+];
+
+function answerGoal(goalId, logs, profile) {
+  const unit = profile.unit_system || 'kg';
+  const recent14 = logs.slice(-14);
+  const recent28 = logs.slice(-28);
+  const sessions14 = recent14.flatMap(l => l.sessions || []);
+  const strengthCount = sessions14.filter(s => s.type === 'Strength').length;
+  const avgProtein = avg(recent14, 'protein_g');
+  const avgSleep = avg(recent14, 'sleep_hours');
+  const avgSteps = avg(recent14, 'steps');
+  const avgCalIn = avg(recent14, 'calories_in');
+  const avgCalOut = avg(recent14, 'calories_out');
+  const avgDeficit = (avgCalIn && avgCalOut) ? avgCalOut - avgCalIn : null;
+  const avgWater = avg(recent14, 'water_l');
+  const avgHrv = avg(recent14, 'hrv');
+  const totalAlcohol = recent14.reduce((s,l) => s + (l.alcohol_units || 0), 0);
+  const currentWeight = logs.filter(l => l.weight_kg).slice(-1)[0]?.weight_kg;
+  const startWeight = profile.start_weight_kg;
+  const muscleNow = logs.filter(l => l.muscle_kg).slice(-1)[0]?.muscle_kg;
+  const muscleStart = logs.filter(l => l.muscle_kg)[0]?.muscle_kg;
+  const muscleChange = (muscleNow && muscleStart) ? muscleNow - muscleStart : null;
+  const proteinPerKg = (avgProtein && currentWeight) ? avgProtein / currentWeight : null;
+
+  const sections = [];
+
+  if (goalId === 'muscle') {
+    sections.push({
+      title: 'Where you are',
+      body: [
+        muscleNow ? `Current muscle mass: ${fmt1(toDisplayWeight(muscleNow, unit))} ${weightUnit(unit)}.` : `Muscle mass not yet logged — start with a Hume weigh-in to track this.`,
+        muscleChange !== null ? `Change since first log: ${muscleChange >= 0 ? '+' : ''}${fmt1(toDisplayWeight(muscleChange, unit))} ${weightUnit(unit)}.` : null,
+        proteinPerKg ? `You're eating ${fmt1(proteinPerKg)}g protein per kg of bodyweight. ${proteinPerKg >= 1.6 ? '✓ Above the threshold for muscle protection in peri.' : '⚠ Below the 1.6g/kg threshold — this is the first lever.'}` : null,
+        strengthCount > 0 ? `${strengthCount} strength sessions logged in the last 14 days (${(strengthCount/2).toFixed(1)}/week).` : `No strength sessions logged. This is the #1 lever for muscle in peri.`,
+      ].filter(Boolean).join(' '),
+    });
+    sections.push({
+      title: 'What the research says',
+      body: 'In peri-menopause, muscle protein synthesis becomes "anabolic resistant" — meaning your body needs more protein per meal to build muscle than it did in your 20s. Combined with declining estrogen, this is why muscle disappears faster in your 40s-50s. Reverse it with: (1) 1.6–2.2g protein per kg bodyweight, (2) 30–40g protein per meal (not just total), (3) 3+ strength sessions per week with progressive overload, (4) adequate carbs around training to fuel recovery.',
+    });
+    const recs = [];
+    if (proteinPerKg && proteinPerKg < 1.6 && currentWeight) recs.push(`Increase protein to ${Math.round(currentWeight * 1.8)}g/day (currently ${Math.round(avgProtein)}g).`);
+    if (strengthCount < 6) recs.push(`Add strength sessions — aim for 3/week, focusing on compound lifts (squat, deadlift, row, press).`);
+    if (avgSleep && avgSleep < 7) recs.push(`Protect sleep — muscle is built during sleep. Under 7h cuts muscle protein synthesis ~18%.`);
+    if (totalAlcohol > 4) recs.push(`Cut alcohol — it directly suppresses muscle protein synthesis for ~36h after.`);
+    if (currentWeight) recs.push(`Eat ~30g protein within 2h after every strength session.`);
+    sections.push({
+      title: 'Your action plan',
+      body: recs.length ? recs.map(r => '• ' + r).join('\n') : '• Keep logging muscle mass weekly. Patterns appear after ~3 weeks.',
+    });
+  }
+
+  else if (goalId === 'stall') {
+    const wLogs = logs.filter(l => l.weight_kg).slice(-7);
+    const stalled = wLogs.length >= 5 && (Math.max(...wLogs.map(l => l.weight_kg)) - Math.min(...wLogs.map(l => l.weight_kg))) < 0.4;
+    sections.push({
+      title: 'Are you actually stalled?',
+      body: stalled
+        ? `Yes — weight has held within a 0.4kg band for ${wLogs.length} days. This is a real stall.`
+        : wLogs.length < 5
+        ? `Not enough weight data to know. Log daily for a week and we can diagnose.`
+        : `Your weight is moving — within the last 7 days, range is ${fmt1(Math.max(...wLogs.map(l => l.weight_kg)) - Math.min(...wLogs.map(l => l.weight_kg)))} ${weightUnit(unit)}. Not a stall, just noise.`,
+    });
+    if (stalled) {
+      const causes = [];
+      if (avgDeficit !== null && avgDeficit < 300) causes.push(`Deficit too small: averaging only ${Math.round(avgDeficit)} kcal/day. Below 300 is too small to overcome water variation.`);
+      if (avgSleep !== null && avgSleep < 7) causes.push(`Sleep low: ${fmt1(avgSleep)}h average. Under 7h elevates cortisol which directly blocks fat loss.`);
+      if (totalAlcohol > 4) causes.push(`Alcohol: ${totalAlcohol} units in 14 days. Suppresses fat oxidation for 36h+ after each drink.`);
+      if (avgWater && profile.water_target && avgWater < profile.water_target * 0.7) causes.push(`Hydration low: ${fmt1(toDisplayWater(avgWater, unit))} ${waterUnit(unit)}/day. Dehydration reduces fat oxidation and elevates hunger.`);
+      if (avgSteps && profile.baseline_steps && avgSteps < profile.baseline_steps * 0.8) causes.push(`Steps dropped: ${fmt0(avgSteps)}/day, below your baseline. NEAT is where the deficit lives.`);
+      sections.push({
+        title: 'Likely causes (in your data)',
+        body: causes.length ? causes.map(c => '• ' + c).join('\n') : '• Numbers look right. Could be hormonal water (luteal phase, sodium spike, post-workout glycogen). Hold the line 3-4 more days — true stalls show after 10+ days of trend, not 5.',
+      });
+      sections.push({
+        title: 'What to do',
+        body: 'Pick ONE thing to fix this week. Trying to change everything at once means you change nothing. Order of priority for peri: 1. Sleep > 2. Protein > 3. Steps > 4. Cut alcohol > 5. Adjust deficit (last resort — restriction usually backfires).',
+      });
+    }
+  }
+
+  else if (goalId === 'fatloss') {
+    const bfLogs = logs.filter(l => l.body_fat_pct);
+    const bfChange = bfLogs.length >= 2 ? bfLogs[bfLogs.length-1].body_fat_pct - bfLogs[0].body_fat_pct : null;
+    sections.push({
+      title: 'How you\'re tracking',
+      body: [
+        bfChange !== null ? `Body fat ${bfChange < 0 ? 'down' : 'up'} ${fmt1(Math.abs(bfChange))}% since first log.` : `Log body fat % to see if you're losing fat vs just weight.`,
+        muscleChange !== null && bfChange !== null
+          ? muscleChange >= -0.2 && bfChange < -0.3
+            ? '✓ You\'re losing fat AND holding muscle — this is the goal in peri.'
+            : muscleChange < -0.3
+            ? '⚠ Losing muscle alongside weight. This is the trap in peri — accelerates regain.'
+            : null
+          : null,
+      ].filter(Boolean).join(' '),
+    });
+    sections.push({
+      title: 'The peri-specific rule',
+      body: 'You can\'t out-restrict the hormonal shift. Cutting calories aggressively in peri tanks muscle, drops thyroid, raises cortisol, and rebounds harder than in your 30s. The protocol that works: (1) eat at small deficit (300–500 kcal), (2) hit 1.6+ g protein/kg, (3) strength train 3x/week to signal "keep the muscle," (4) walk a lot (NEAT > gym for fat loss), (5) sleep is non-negotiable.',
+    });
+    const recs = [];
+    if (avgDeficit !== null) {
+      if (avgDeficit > 700) recs.push(`Your deficit (${Math.round(avgDeficit)} kcal/day) is too aggressive — back it off. Eat more, especially around training.`);
+      else if (avgDeficit < 200) recs.push(`Your deficit (${Math.round(avgDeficit)} kcal/day) is too small to drive consistent loss — increase output, not restriction.`);
+    }
+    if (proteinPerKg !== null && proteinPerKg < 1.6) recs.push(`Increase protein to 1.6g/kg minimum — currently ${fmt1(proteinPerKg)}g/kg.`);
+    if (strengthCount < 4) recs.push(`Strength train 3x/week — currently ${(strengthCount/2).toFixed(1)}/week.`);
+    if (avgSteps && profile.baseline_steps && avgSteps < profile.baseline_steps) recs.push(`Hit your step target — currently ${fmt0(avgSteps)}/day, target ${profile.baseline_steps.toLocaleString()}.`);
+    sections.push({ title: 'Your action plan', body: recs.length ? recs.map(r => '• ' + r).join('\n') : '• Your numbers look solid. Keep going — fat loss is slow and non-linear in peri. Trust the trend.' });
+  }
+
+  else if (goalId === 'sleep') {
+    sections.push({
+      title: 'Where you are',
+      body: avgSleep !== null
+        ? `Averaging ${fmt1(avgSleep)}h, ${avgSleep >= 7.5 ? '✓ that\'s solid.' : avgSleep >= 7 ? 'good but could be better.' : '⚠ this is short.'}`
+        : 'Sleep not logged — start tracking it. Smartwatch or just typing in is fine.',
+    });
+    sections.push({
+      title: 'Why it matters in peri',
+      body: 'Estrogen and progesterone both drop in peri — both are sleep-protective. So you wake more, stay awake longer, have hot flashes. This isn\'t in your head and it\'s not "just stress." It\'s biology. The compounding effect: poor sleep → cortisol up → fat storage up → muscle loss → worse sleep. Breaking the cycle is your #1 fat loss lever.',
+    });
+    const recs = [];
+    if (totalAlcohol > 0) recs.push(`Cut alcohol on weeknights — even 1 drink fragments REM and adds 30–60min to time-to-fall-asleep in peri.`);
+    if (avgSleep !== null && avgSleep < 7) recs.push(`Magnesium glycinate 300–400mg at bedtime — magnesium drops in peri and worsens sleep.`);
+    if (avgSleep !== null && avgSleep < 7) recs.push(`Cool the room (16-18°C). Hot flashes wake you — pre-empting them helps.`);
+    recs.push(`Cut caffeine after 12pm. Half-life is 5-6h, peri increases sensitivity.`);
+    recs.push(`Protein-forward dinner — protein stabilises blood sugar overnight (prevents 3am wake-ups).`);
+    sections.push({ title: 'Your action plan', body: recs.map(r => '• ' + r).join('\n') });
+  }
+
+  else if (goalId === 'luteal') {
+    sections.push({
+      title: 'What\'s happening in your body',
+      body: 'Progesterone rises in luteal (the week before your period). It raises body temperature, fragments sleep, suppresses HRV, increases water retention (1-2kg of "weight" that isn\'t fat), and significantly increases appetite. This is hormones, not failure. The strategies that work in follicular DON\'T work in luteal — different game.',
+    });
+    sections.push({
+      title: 'How to play it',
+      body: [
+        '• Drop intensity 20%. More zone 2, less HIIT. Recovery is slower, so demanding the same workload causes overreach.',
+        '• Eat MORE carbs — 15-20% more than usual. Cravings are real and biological. Restricting just creates a binge later.',
+        '• 30g fibre minimum — supports estrogen clearance.',
+        '• Magnesium 300-400mg evening — reduces PMS, improves sleep through hot flashes.',
+        '• Expect 1-2kg "weight gain" — this is water, it disappears within 48h of your period starting. DO NOT panic-restrict.',
+        '• Protect sleep extra hard — luteal sleep is naturally worse.',
+      ].join('\n'),
+    });
+  }
+
+  else if (goalId === 'energy') {
+    sections.push({
+      title: 'Where you are',
+      body: [
+        avgHrv ? `HRV averaging ${fmt0(avgHrv)}ms.` : 'HRV not yet tracked — adds a lot to recovery analysis.',
+        avgSleep ? `Sleep ${fmt1(avgSleep)}h average.` : null,
+        totalAlcohol > 0 ? `${totalAlcohol} units alcohol in 14 days (each drink drops HRV ~15%).` : null,
+      ].filter(Boolean).join(' '),
+    });
+    sections.push({
+      title: 'The recovery hierarchy',
+      body: 'In peri, recovery becomes the bottleneck for every other goal. You can\'t out-train poor recovery. Order of impact, biggest first: (1) sleep duration + quality, (2) alcohol, (3) chronic stress, (4) zone 2 cardio (paradoxically improves recovery), (5) magnesium + omega-3.',
+    });
+    const recs = [];
+    if (avgSleep !== null && avgSleep < 7.5) recs.push(`Sleep is your biggest lever — aim 7.5-8h minimum.`);
+    if (totalAlcohol > 2) recs.push(`Reduce alcohol — single biggest HRV hit you can avoid.`);
+    if (sessions14.filter(s => ['HIIT', 'Strength'].includes(s.type)).length > 6) recs.push(`Too many high-intensity sessions — add 2 zone 2 sessions/week to build aerobic base.`);
+    recs.push(`Magnesium glycinate + omega-3 daily — well-evidenced for HRV in peri.`);
+    sections.push({ title: 'Your action plan', body: recs.map(r => '• ' + r).join('\n') });
+  }
+
+  else if (goalId === 'hunger') {
+    sections.push({
+      title: 'The hormonal reality',
+      body: 'Hunger in peri isn\'t willpower — it\'s ghrelin and leptin disrupting alongside estrogen drop. If you\'re hungry on a deficit, your body is signalling muscle loss is imminent. The fix isn\'t pushing through. It\'s eating differently so you can sustain the deficit without fighting your hormones.',
+    });
+    sections.push({
+      title: 'What works',
+      body: [
+        '• Front-load protein at breakfast — 30-40g. Suppresses ghrelin for 5+ hours.',
+        '• Fibre at every meal — 30g/day target. Slows gastric emptying, keeps you full.',
+        '• Don\'t cut fat — fat triggers satiety signals (CCK). Cutting it makes hunger worse.',
+        '• Add volume — leafy greens, berries, cucumber. Bulk without calories.',
+        '• Hydrate before meals — 500ml water 20 min before eating cuts hunger.',
+        '• Sleep first. Under-sleep raises ghrelin 28% and drops leptin 18%. You will eat more when tired, every time.',
+        '• If hungry on a deficit, the deficit is too aggressive. Eat more, move more — different equation.',
+      ].join('\n'),
+    });
+  }
+
+  return sections;
+}
+
+function CoachView({ profile, logs }) {
+  const unit = profile.unit_system || 'kg';
+  const [mode, setMode] = useState('week');
+  const [selectedGoal, setSelectedGoal] = useState(null);
+
+  // Get scoped logs for retrospective modes
+  const scopedLogs = useMemo(() => {
+    if (mode === 'all' || mode === 'goals') return logs;
+    const days = mode === 'week' ? 7 : 30;
+    const cutoff = ymd(new Date(today().getTime() - days * 86400000));
+    return logs.filter(l => l.date >= cutoff);
+  }, [logs, mode]);
+
+  const label = mode === 'week' ? 'this week' : mode === 'month' ? 'this month' : 'overall';
+  const diagnosis = useMemo(() => mode === 'goals' ? [] : diagnoseRange(scopedLogs, profile, label), [scopedLogs, profile, label, mode]);
+  const scorecard = useMemo(() => behaviourScorecard(logs, profile), [logs, profile]);
+  const allInsights = useMemo(() => generateInsights(logs, profile), [logs, profile]);
+  const general = {
+    gaps: allInsights.gaps.filter(it => it.scope !== 'body'),
+    wins: allInsights.wins.filter(it => it.scope !== 'body'),
+    stalls: allInsights.stalls.filter(it => it.scope !== 'body'),
+    cycle: allInsights.cycle.filter(it => it.scope !== 'body'),
+  };
+
+  const wins = diagnosis.filter(d => d.tone === 'good');
+  const blocks = diagnosis.filter(d => d.tone === 'warn');
+  const neutral = diagnosis.filter(d => d.tone === 'neutral' || d.tone === 'info');
+
+  return (
+    <div className="fade-in">
+      <h1 className="page-title">Coach</h1>
+      <p className="page-sub">Your data, analysed. Pick a time scope or ask a specific question.</p>
+
+      {/* Mode toggle */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 18, flexWrap: 'wrap' }}>
+        {[
+          { id: 'week', label: 'Week' },
+          { id: 'month', label: 'Month' },
+          { id: 'all', label: 'All time' },
+          { id: 'goals', label: 'Ask about...' },
+        ].map(s => (
+          <button
+            key={s.id}
+            onClick={() => { setMode(s.id); setSelectedGoal(null); }}
+            style={{
+              padding: '10px 18px', borderRadius: 8,
+              background: mode === s.id ? 'var(--teal)' : 'white',
+              color: mode === s.id ? 'white' : 'var(--text)',
+              border: `1px solid ${mode === s.id ? 'var(--teal)' : 'var(--border)'}`,
+              fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            }}
+          >{s.label}</button>
+        ))}
+      </div>
+
+      {/* GOALS MODE */}
+      {mode === 'goals' && !selectedGoal && (
+        <div className="card" style={{ marginBottom: 14 }}>
+          <p style={{ fontSize: 14, color: 'var(--text-mute)', marginBottom: 16, lineHeight: 1.5 }}>
+            Pick what you want to figure out. Your answer uses your actual data plus what works in peri.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
+            {COACH_GOALS.map(g => (
+              <button
+                key={g.id}
+                onClick={() => setSelectedGoal(g.id)}
+                style={{
+                  textAlign: 'left', padding: 14, borderRadius: 10,
+                  background: 'var(--surface-2)', border: '1px solid var(--border)',
+                  display: 'flex', gap: 10, alignItems: 'center', cursor: 'pointer',
+                }}
+              >
+                <span style={{ fontSize: 20 }}>{g.icon}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{g.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {mode === 'goals' && selectedGoal && (
+        <>
+          <button onClick={() => setSelectedGoal(null)} style={{ background: 'transparent', border: 'none', color: 'var(--teal)', fontSize: 13, cursor: 'pointer', marginBottom: 14, fontWeight: 600 }}>
+            ← Back to questions
+          </button>
+          <div className="card" style={{ marginBottom: 14 }}>
+            <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 14, color: 'var(--text)' }}>
+              {COACH_GOALS.find(g => g.id === selectedGoal)?.icon} {COACH_GOALS.find(g => g.id === selectedGoal)?.label}
+            </h2>
+            {logs.length < 5 ? (
+              <p style={{ fontSize: 14, color: 'var(--text-mute)', lineHeight: 1.6 }}>
+                Log a few more days and I can answer this with your real numbers. Right now I can only give general guidance — come back after 5+ days of logging.
+              </p>
+            ) : (
+              answerGoal(selectedGoal, logs, profile).map((section, i) => (
+                <div key={i} style={{ marginBottom: 22, paddingTop: i === 0 ? 0 : 18, borderTop: i === 0 ? 'none' : '1px solid var(--divider)' }}>
+                  <h3 style={{ fontSize: 13, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--teal)', marginBottom: 10, fontWeight: 600 }}>{section.title}</h3>
+                  <p style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.7, whiteSpace: 'pre-line' }}>{section.body}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </>
+      )}
+
+      {/* RETROSPECTIVE MODES (week/month/all) */}
+      {mode !== 'goals' && scopedLogs.length === 0 && (
+        <div className="card-teal">
+          <p style={{ fontSize: 14, opacity: 0.9, lineHeight: 1.6 }}>
+            Nothing logged {label}. Open the Daily log to start.
+          </p>
+        </div>
+      )}
+
+      {mode !== 'goals' && scopedLogs.length > 0 && (
+        <>
+          {/* Headline stats */}
+          {(() => {
+            const wLogs = scopedLogs.filter(l => l.weight_kg);
+            const sw = wLogs[0]?.weight_kg;
+            const ew = wLogs[wLogs.length - 1]?.weight_kg;
+            const wChange = (sw && ew) ? ew - sw : null;
+            const bfLogs = scopedLogs.filter(l => l.body_fat_pct);
+            const bfChange = bfLogs.length >= 2 ? bfLogs[bfLogs.length-1].body_fat_pct - bfLogs[0].body_fat_pct : null;
+            const mLogs = scopedLogs.filter(l => l.muscle_kg);
+            const mChange = mLogs.length >= 2 ? mLogs[mLogs.length-1].muscle_kg - mLogs[0].muscle_kg : null;
+            const totalSessions = scopedLogs.reduce((s,l) => s + ((l.sessions || []).length), 0);
+            const avgSleep = avg(scopedLogs, 'sleep_hours');
+            const avgSteps = avg(scopedLogs, 'steps');
+            const avgProtein = avg(scopedLogs, 'protein_g');
+            return (
+              <>
+                <div className="row row-4" style={{ marginBottom: 14 }}>
+                  <div className="card">
+                    <div className="label">Days logged</div>
+                    <div className="stat-num-sm" style={{ marginTop: 8 }}>{scopedLogs.length}</div>
+                  </div>
+                  <div className="card">
+                    <div className="label">Weight</div>
+                    <div className="stat-num-sm" style={{ marginTop: 8, color: wChange !== null && wChange < 0 ? 'var(--success)' : 'var(--text)' }}>
+                      {wChange === null ? '–' : `${wChange > 0 ? '+' : ''}${fmt1(toDisplayWeight(wChange, unit))} ${weightUnit(unit)}`}
+                    </div>
+                  </div>
+                  <div className="card">
+                    <div className="label">Body fat</div>
+                    <div className="stat-num-sm" style={{ marginTop: 8, color: bfChange !== null && bfChange < 0 ? 'var(--success)' : 'var(--text)' }}>
+                      {bfChange === null ? '–' : `${bfChange > 0 ? '+' : ''}${fmt1(bfChange)}%`}
+                    </div>
+                  </div>
+                  <div className="card">
+                    <div className="label">Sessions</div>
+                    <div className="stat-num-sm" style={{ marginTop: 8 }}>{totalSessions}</div>
+                  </div>
+                </div>
+                <div className="row row-4" style={{ marginBottom: 22 }}>
+                  <div className="card-soft">
+                    <div className="label">Muscle</div>
+                    <div className="stat-num-sm" style={{ marginTop: 8, color: mChange !== null && mChange >= 0 ? 'var(--success)' : 'var(--pink)' }}>
+                      {mChange === null ? '–' : `${mChange > 0 ? '+' : ''}${fmt1(toDisplayWeight(mChange, unit))} ${weightUnit(unit)}`}
+                    </div>
+                  </div>
+                  <div className="card-soft">
+                    <div className="label">Avg sleep</div>
+                    <div className="stat-num-sm" style={{ marginTop: 8 }}>{avgSleep ? fmt1(avgSleep) + 'h' : '–'}</div>
+                  </div>
+                  <div className="card-soft">
+                    <div className="label">Avg steps</div>
+                    <div className="stat-num-sm" style={{ marginTop: 8 }}>{avgSteps ? fmt0(avgSteps) : '–'}</div>
+                  </div>
+                  <div className="card-soft">
+                    <div className="label">Avg protein</div>
+                    <div className="stat-num-sm" style={{ marginTop: 8 }}>{avgProtein ? fmt0(avgProtein) + 'g' : '–'}</div>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
+
+          {/* Wins */}
+          {wins.length > 0 && (
+            <div className="card-teal" style={{ marginBottom: 14 }}>
+              <div className="label" style={{ color: 'rgba(255,255,255,0.7)', marginBottom: 14 }}>What's working {label}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {wins.map((d, i) => (
+                  <div key={i} style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 10, padding: 14 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{d.headline}</div>
+                    <div style={{ fontSize: 13, opacity: 0.9, lineHeight: 1.5 }}>{d.detail}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Friction */}
+          {blocks.length > 0 && (
+            <div className="card" style={{ marginBottom: 14, borderLeft: '4px solid var(--pink)' }}>
+              <div className="label" style={{ marginBottom: 14, color: 'var(--pink)' }}>Where the friction is</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {blocks.map((d, i) => (
+                  <div key={i}>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{d.headline}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.5 }}>{d.detail}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Notes / neutral */}
+          {neutral.length > 0 && (
+            <div className="card" style={{ marginBottom: 14, borderLeft: '4px solid var(--teal)' }}>
+              <div className="label" style={{ marginBottom: 14, color: 'var(--teal)' }}>Notes</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {neutral.map((d, i) => (
+                  <div key={i}>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{d.headline}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.5 }}>{d.detail}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Behaviour scorecard — only on All time mode (needs lots of data) */}
+          {mode === 'all' && scorecard.ready && scorecard.items.length > 0 && (
+            <div className="card" style={{ marginBottom: 14, borderLeft: '4px solid var(--teal)' }}>
+              <div className="label" style={{ marginBottom: 4, color: 'var(--teal)' }}>Your biggest levers</div>
+              <p style={{ fontSize: 13, color: 'var(--text-mute)', marginBottom: 14, lineHeight: 1.5 }}>
+                Ranked by how much each habit moves YOUR scale. Focus on the top 2-3.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {(() => {
+                  const max = Math.max(...scorecard.items.map(it => Math.abs(it.impact)));
+                  return scorecard.items.map((it, i) => {
+                    const pct = Math.min(100, (Math.abs(it.impact) / max) * 100);
+                    const color = it.helps ? 'var(--success)' : 'var(--pink)';
+                    return (
+                      <div key={i}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                          <div style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-mute)', minWidth: 18 }}>#{i+1}</span>
+                            <span style={{ fontSize: 14, fontWeight: 600 }}>{it.habit}</span>
+                            <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>· {it.dataPoints} days</span>
+                          </div>
+                          <span style={{ fontSize: 13, fontWeight: 700, color }}>
+                            {it.helps ? '−' : '+'}{fmt1(toDisplayWeight(Math.abs(it.impact), unit))} {weightUnit(unit)}
+                          </span>
+                        </div>
+                        <div style={{ height: 6, background: 'var(--surface-2)', borderRadius: 3, overflow: 'hidden', marginBottom: 6 }}>
+                          <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3 }} />
+                        </div>
+                        <p style={{ fontSize: 12, color: 'var(--text-mute)', lineHeight: 1.5, marginLeft: 28 }}>{it.observation}</p>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+          )}
+
+          {/* Empty state */}
+          {diagnosis.length === 0 && (
+            <div className="card">
+              <p style={{ fontSize: 14, color: 'var(--text-mute)', lineHeight: 1.6 }}>
+                Not enough complete data {label} to surface patterns. Keep logging — sleep, water, protein, calories all need to be filled in for the engine to read between them.
+              </p>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
 // APP ROOT
 // ============================================================
 function App() {
@@ -2950,10 +3432,9 @@ function App() {
       <main className="main">
         {view === 'dashboard' && <Dashboard profile={profile} logs={logs} todayLog={todayLog} setView={setView} />}
         {view === 'log' && <DailyLog profile={profile} logs={logs} todayLog={todayLog} onLogSaved={loadData} />}
-        {view === 'review' && <ReviewView profile={profile} logs={logs} />}
+        {view === 'coach' && <CoachView profile={profile} logs={logs} />}
         {view === 'cycle' && <CycleInsights profile={profile} logs={logs} />}
         {view === 'trends' && <WeightTrends profile={profile} logs={logs} />}
-        {view === 'recovery' && <RecoveryView profile={profile} logs={logs} />}
         {view === 'settings' && <SettingsView profile={profile} onUpdate={loadData} />}
         <div style={{ marginTop: 48, paddingTop: 20, borderTop: '1px solid var(--divider)', textAlign: 'center', fontSize: 11, color: 'var(--text-faint)', lineHeight: 1.6 }}>
           Educational use only — not medical advice. <button onClick={() => setView('settings')} style={{ background: 'transparent', border: 'none', color: 'var(--teal)', fontSize: 11, cursor: 'pointer', textDecoration: 'underline' }}>Full disclaimer in Settings</button>
