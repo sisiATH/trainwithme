@@ -145,6 +145,10 @@ const parseYMD = (s) => { if (!s) return null; const [y,m,d] = s.split('-').map(
 const daysBetween = (a, b) => Math.round((b - a) / 86400000);
 const fmt1 = (n) => (n === null || n === undefined || isNaN(n)) ? '–' : Number(n).toFixed(1);
 const fmt0 = (n) => (n === null || n === undefined || isNaN(n)) ? '–' : Math.round(Number(n)).toLocaleString();
+function hexToRgb(hex) {
+  const h = hex.replace('#', '');
+  return { r: parseInt(h.substr(0,2), 16), g: parseInt(h.substr(2,2), 16), b: parseInt(h.substr(4,2), 16) };
+}
 
 const toDisplayWeight = (kg, unit) => {
   if (kg === null || kg === undefined || kg === '') return null;
@@ -3100,6 +3104,447 @@ function ReviewView({ profile, logs }) {
 }
 
 // ============================================================
+// EXPORTS — CSV (raw data) + PDF (charts for nutritionist)
+// ============================================================
+
+// Fetch all health log data (scans, symptoms, meds, labs) for a date range
+async function fetchHealthLog(dateFrom, dateTo) {
+  const [scans, symptoms, meds, labs] = await Promise.all([
+    db.from('body_scans').select('*').gte('scan_date', dateFrom).lte('scan_date', dateTo).order('scan_date', { ascending: false }),
+    db.from('symptoms').select('*').gte('date', dateFrom).lte('date', dateTo).order('date', { ascending: false }),
+    db.from('medications').select('*').order('start_date', { ascending: false, nullsFirst: false }),
+    db.from('labs').select('*').gte('test_date', dateFrom).lte('test_date', dateTo).order('test_date', { ascending: false }),
+  ]);
+  return { scans: scans.data || [], symptoms: symptoms.data || [], meds: meds.data || [], labs: labs.data || [] };
+}
+
+function exportCSV(logs, profile, dateFrom, dateTo) {
+  const unit = profile.unit_system || 'kg';
+  const filtered = logs.filter(l => l.date >= dateFrom && l.date <= dateTo);
+  const headers = ['Date', `Weight (${weightUnit(unit)})`, 'Body fat %', `Muscle (${weightUnit(unit)})`, 'Body water %',
+    'HRV (ms)', 'RHR (bpm)', 'Sleep (h)', 'Sleep quality', 'Mood', 'Stress',
+    'Steps', 'Calories in', 'Calories out', 'Protein (g)', 'Carbs (g)', 'Fat (g)', 'Fibre (g)',
+    `Water (${waterUnit(unit)})`, 'Caffeine (cups)', 'Alcohol (units)', 'Sessions', 'Session kcal', 'Period today', 'Notes'];
+  const rows = filtered.map(l => {
+    const sessSum = (l.sessions || []).map(s => `${s.timeOfDay || ''} ${s.type} ${s.duration}min${s.rpe ? ' RPE' + s.rpe : ''}${s.calories ? ' ' + s.calories + 'kcal' : ''}`).join('; ');
+    const sessCal = (l.sessions || []).reduce((sum, s) => sum + (s.calories || 0), 0);
+    return [l.date,
+      l.weight_kg ? fmt1(toDisplayWeight(l.weight_kg, unit)) : '',
+      l.body_fat_pct ?? '',
+      l.muscle_kg ? fmt1(toDisplayWeight(l.muscle_kg, unit)) : '',
+      l.body_water_pct ?? '', l.hrv ?? '', l.rhr ?? '', l.sleep_hours ?? '', l.sleep_quality ?? '',
+      l.mood ?? '', l.stress ?? '', l.steps ?? '', l.calories_in ?? '', l.calories_out ?? '',
+      l.protein_g ?? '', l.carbs_g ?? '', l.fat_g ?? '', l.fibre_g ?? '',
+      l.water_l ? fmt1(toDisplayWater(l.water_l, unit)) : '',
+      l.caffeine_mg ? (l.caffeine_mg / 95).toFixed(1) : '',
+      l.alcohol_units ?? '', sessSum, sessCal || '', l.period_today ? 'Yes' : '', (l.notes || '').replace(/[\r\n]+/g, ' ')];
+  });
+  const escape = (v) => { const s = String(v ?? ''); return (s.includes(',') || s.includes('"') || s.includes('\n')) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const csv = [headers, ...rows].map(r => r.map(escape).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `train-with-me-${dateFrom}-to-${dateTo}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Draw a simple line chart on a jsPDF doc — returns the y position after drawing
+function drawPdfChart(doc, x, y, w, h, series, title, dates) {
+  doc.setFontSize(9); doc.setTextColor(40, 60, 70); doc.setFont(undefined, 'bold');
+  doc.text(title, x, y - 3);
+  doc.setFont(undefined, 'normal');
+  const leftSeries = series.filter(s => s.axis === 'left');
+  const rightSeries = series.filter(s => s.axis === 'right');
+  const leftAll = leftSeries.flatMap(s => s.values).filter(v => v !== null && v !== undefined);
+  const rightAll = rightSeries.flatMap(s => s.values).filter(v => v !== null && v !== undefined);
+  if (!leftAll.length && !rightAll.length) {
+    doc.setFontSize(8); doc.setTextColor(140);
+    doc.text('No data for this period', x + 4, y + h/2);
+    return y + h + 10;
+  }
+  const lMin = leftAll.length ? Math.min(...leftAll) : 0;
+  const lMax = leftAll.length ? Math.max(...leftAll) : 1;
+  const lRange = (lMax - lMin) || 1;
+  const rMin = rightAll.length ? Math.min(...rightAll) : 0;
+  const rMax = rightAll.length ? Math.max(...rightAll) : 1;
+  const rRange = (rMax - rMin) || 1;
+  const n = series[0]?.values.length || 0;
+  // Frame + gridlines
+  doc.setDrawColor(220); doc.setLineWidth(0.2);
+  doc.rect(x, y, w, h);
+  for (let i = 1; i < 4; i++) { const gy = y + (h/4) * i; doc.line(x, gy, x + w, gy); }
+  // Plot each series
+  series.forEach(s => {
+    const min = s.axis === 'left' ? lMin : rMin;
+    const range = s.axis === 'left' ? lRange : rRange;
+    const pts = s.values.map((v, i) => {
+      if (v === null || v === undefined) return null;
+      return { px: x + (i / Math.max(n-1, 1)) * w, py: y + h - ((v - min) / range) * h };
+    }).filter(Boolean);
+    if (!pts.length) return;
+    const rgb = hexToRgb(s.color);
+    doc.setDrawColor(rgb.r, rgb.g, rgb.b);
+    doc.setFillColor(rgb.r, rgb.g, rgb.b);
+    doc.setLineWidth(0.5);
+    for (let i = 1; i < pts.length; i++) doc.line(pts[i-1].px, pts[i-1].py, pts[i].px, pts[i].py);
+    pts.forEach(p => doc.circle(p.px, p.py, 0.5, 'F'));
+  });
+  // Axis labels
+  doc.setFontSize(6); doc.setTextColor(130);
+  if (leftAll.length) {
+    const lc = hexToRgb(leftSeries[0].color);
+    doc.setTextColor(lc.r, lc.g, lc.b);
+    doc.text(lMax.toFixed(1), x - 0.5, y + 1.5, { align: 'right' });
+    doc.text(lMin.toFixed(1), x - 0.5, y + h, { align: 'right' });
+  }
+  if (rightAll.length) {
+    const rc = hexToRgb(rightSeries[0].color);
+    doc.setTextColor(rc.r, rc.g, rc.b);
+    doc.text(rMax.toFixed(1), x + w + 0.5, y + 1.5);
+    doc.text(rMin.toFixed(1), x + w + 0.5, y + h);
+  }
+  // Date labels (first/middle/last)
+  if (dates && dates.length >= 2) {
+    doc.setTextColor(140); doc.setFontSize(6);
+    doc.text(dates[0], x, y + h + 4);
+    if (dates.length > 4) doc.text(dates[Math.floor(dates.length/2)], x + w/2, y + h + 4, { align: 'center' });
+    doc.text(dates[dates.length-1], x + w, y + h + 4, { align: 'right' });
+  }
+  // Legend
+  doc.setFontSize(7); doc.setTextColor(80);
+  let lx = x;
+  series.forEach(s => {
+    const rgb = hexToRgb(s.color);
+    doc.setFillColor(rgb.r, rgb.g, rgb.b);
+    doc.rect(lx, y + h + 7, 3, 1.5, 'F');
+    doc.text(s.label, lx + 4, y + h + 8.5);
+    lx += doc.getTextWidth(s.label) + 12;
+  });
+  return y + h + 14;
+}
+
+async function exportPDF(logs, profile, dateFrom, dateTo) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const unit = profile.unit_system || 'kg';
+  const pageW = 210; const margin = 12;
+  let y = margin;
+  const filtered = logs.filter(l => l.date >= dateFrom && l.date <= dateTo).sort((a,b) => a.date.localeCompare(b.date));
+  const health = await fetchHealthLog(dateFrom, dateTo);
+
+  // ---------- HEADER ----------
+  doc.setFontSize(18); doc.setTextColor(0, 104, 122); doc.setFont(undefined, 'bold');
+  doc.text('Train With Me — Health Report', margin, y);
+  y += 6;
+  doc.setFontSize(10); doc.setTextColor(80); doc.setFont(undefined, 'normal');
+  doc.text(`${profile.name || ''} · Period: ${dateFrom} to ${dateTo} · Generated ${ymd(today())}`, margin, y);
+  y += 8;
+
+  // ---------- HEADLINE STATS ----------
+  const wLogs = filtered.filter(l => l.weight_kg);
+  const bfLogs = filtered.filter(l => l.body_fat_pct);
+  const mLogs = filtered.filter(l => l.muscle_kg);
+  const wChange = wLogs.length >= 2 ? wLogs[wLogs.length-1].weight_kg - wLogs[0].weight_kg : null;
+  const bfChange = bfLogs.length >= 2 ? bfLogs[bfLogs.length-1].body_fat_pct - bfLogs[0].body_fat_pct : null;
+  const mChange = mLogs.length >= 2 ? mLogs[mLogs.length-1].muscle_kg - mLogs[0].muscle_kg : null;
+  const avgSleep = avg(filtered, 'sleep_hours');
+  const avgSteps = avg(filtered, 'steps');
+  const avgProtein = avg(filtered, 'protein_g');
+  const avgCalIn = avg(filtered, 'calories_in');
+  const avgCalOut = avg(filtered, 'calories_out');
+  const totalSessions = filtered.reduce((s,l) => s + ((l.sessions||[]).length), 0);
+
+  doc.setFontSize(11); doc.setTextColor(0, 104, 122); doc.setFont(undefined, 'bold');
+  doc.text('Summary', margin, y); y += 5;
+  doc.setFont(undefined, 'normal'); doc.setFontSize(9); doc.setTextColor(40);
+  const stats = [
+    ['Days logged', String(filtered.length)],
+    ['Weight change', wChange === null ? '–' : `${wChange > 0 ? '+' : ''}${fmt1(toDisplayWeight(wChange, unit))} ${weightUnit(unit)}`],
+    ['Body fat change', bfChange === null ? '–' : `${bfChange > 0 ? '+' : ''}${fmt1(bfChange)}%`],
+    ['Muscle change', mChange === null ? '–' : `${mChange > 0 ? '+' : ''}${fmt1(toDisplayWeight(mChange, unit))} ${weightUnit(unit)}`],
+    ['Avg sleep', avgSleep ? fmt1(avgSleep) + 'h' : '–'],
+    ['Avg steps', avgSteps ? fmt0(avgSteps) : '–'],
+    ['Avg protein', avgProtein ? fmt0(avgProtein) + 'g' : '–'],
+    ['Avg cal in', avgCalIn ? fmt0(avgCalIn) : '–'],
+    ['Avg cal out', avgCalOut ? fmt0(avgCalOut) : '–'],
+    ['Sessions', String(totalSessions)],
+  ];
+  doc.autoTable({
+    startY: y, head: [], body: stats,
+    theme: 'plain', styles: { fontSize: 9, cellPadding: 1.5 },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 35, textColor: [80,80,80] } },
+    margin: { left: margin, right: margin },
+  });
+  y = doc.lastAutoTable.finalY + 8;
+
+  // ---------- CHARTS ROW ----------
+  // Build aligned dates
+  const dates = filtered.map(l => l.date);
+  const wVals = filtered.map(l => l.weight_kg ? toDisplayWeight(l.weight_kg, unit) : null);
+  const bfVals = filtered.map(l => l.body_fat_pct || null);
+  const mVals = filtered.map(l => l.muscle_kg ? toDisplayWeight(l.muscle_kg, unit) : null);
+  const hrvVals = filtered.map(l => l.hrv || null);
+  const rhrVals = filtered.map(l => l.rhr || null);
+  const sleepVals = filtered.map(l => l.sleep_hours || null);
+  const calInVals = filtered.map(l => l.calories_in || null);
+  const calOutVals = filtered.map(l => l.calories_out || null);
+  const proteinVals = filtered.map(l => l.protein_g || null);
+  const stepVals = filtered.map(l => l.steps || null);
+
+  // BODY COMPOSITION
+  doc.setFontSize(11); doc.setTextColor(0, 104, 122); doc.setFont(undefined, 'bold');
+  doc.text('Body composition', margin, y); y += 4;
+  doc.setFont(undefined, 'normal');
+  y = drawPdfChart(doc, margin, y + 5, pageW - margin*2, 35,
+    [
+      { values: wVals, color: '#00687a', axis: 'left', label: `Weight (${weightUnit(unit)})` },
+      { values: mVals, color: '#cfff04', axis: 'left', label: `Muscle (${weightUnit(unit)})` },
+      { values: bfVals, color: '#ff5bcf', axis: 'right', label: 'Body fat %' },
+    ], '', dates);
+  y += 4;
+
+  // RECOVERY
+  doc.setFontSize(11); doc.setTextColor(0, 104, 122); doc.setFont(undefined, 'bold');
+  doc.text('Recovery & sleep', margin, y); y += 4;
+  doc.setFont(undefined, 'normal');
+  y = drawPdfChart(doc, margin, y + 5, pageW - margin*2, 35,
+    [
+      { values: hrvVals, color: '#00687a', axis: 'left', label: 'HRV (ms)' },
+      { values: rhrVals, color: '#ff5bcf', axis: 'left', label: 'RHR (bpm)' },
+      { values: sleepVals, color: '#cfff04', axis: 'right', label: 'Sleep (h)' },
+    ], '', dates);
+  y += 4;
+
+  // NUTRITION (page 2 likely)
+  if (y > 240) { doc.addPage(); y = margin; }
+  doc.setFontSize(11); doc.setTextColor(0, 104, 122); doc.setFont(undefined, 'bold');
+  doc.text('Nutrition & energy balance', margin, y); y += 4;
+  doc.setFont(undefined, 'normal');
+  y = drawPdfChart(doc, margin, y + 5, pageW - margin*2, 35,
+    [
+      { values: calInVals, color: '#ff5bcf', axis: 'left', label: 'Calories in' },
+      { values: calOutVals, color: '#00687a', axis: 'left', label: 'Calories out' },
+      { values: proteinVals, color: '#cfff04', axis: 'right', label: 'Protein (g)' },
+    ], '', dates);
+  y += 4;
+
+  // TRAINING - steps + session count by day
+  if (y > 240) { doc.addPage(); y = margin; }
+  doc.setFontSize(11); doc.setTextColor(0, 104, 122); doc.setFont(undefined, 'bold');
+  doc.text('Training & activity', margin, y); y += 4;
+  doc.setFont(undefined, 'normal');
+  y = drawPdfChart(doc, margin, y + 5, pageW - margin*2, 35,
+    [{ values: stepVals, color: '#00687a', axis: 'left', label: 'Daily steps' }], '', dates);
+  y += 4;
+
+  // DIAGNOSIS / INSIGHTS
+  if (y > 230) { doc.addPage(); y = margin; }
+  doc.setFontSize(11); doc.setTextColor(0, 104, 122); doc.setFont(undefined, 'bold');
+  doc.text('Analysis', margin, y); y += 5;
+  const diagnosis = diagnoseRange(filtered, profile, `in this period`);
+  if (diagnosis.length === 0) {
+    doc.setFontSize(9); doc.setTextColor(120); doc.setFont(undefined, 'italic');
+    doc.text('Not enough data to surface patterns for this period.', margin, y); y += 6;
+  } else {
+    doc.autoTable({
+      startY: y,
+      head: [['Type', 'Finding', 'Detail']],
+      body: diagnosis.map(d => [d.tone === 'good' ? '✓' : d.tone === 'warn' ? '!' : '·', d.headline, d.detail]),
+      theme: 'striped', styles: { fontSize: 8, cellPadding: 2, valign: 'top' },
+      headStyles: { fillColor: [0, 104, 122], textColor: 255 },
+      columnStyles: { 0: { cellWidth: 8, halign: 'center' }, 1: { cellWidth: 60, fontStyle: 'bold' } },
+      margin: { left: margin, right: margin },
+    });
+    y = doc.lastAutoTable.finalY + 6;
+  }
+
+  // ---------- SYMPTOMS ----------
+  if (health.symptoms.length > 0) {
+    if (y > 230) { doc.addPage(); y = margin; }
+    doc.setFontSize(11); doc.setTextColor(0, 104, 122); doc.setFont(undefined, 'bold');
+    doc.text('Symptoms', margin, y); y += 5;
+    doc.autoTable({
+      startY: y,
+      head: [['Date', 'Hot fl', 'NS', 'Fog', 'Joint', 'Mood', 'Anx', 'Bloat', 'HA', 'Notes']],
+      body: health.symptoms.map(s => [s.date, s.hot_flashes ?? '', s.night_sweats ? 'Y' : '', s.brain_fog ?? '', s.joint_pain ?? '', s.mood_swings ?? '', s.anxiety ?? '', s.bloating ?? '', s.headache ? 'Y' : '', s.notes || '']),
+      theme: 'striped', styles: { fontSize: 8, cellPadding: 1.5 },
+      headStyles: { fillColor: [0, 104, 122], textColor: 255, fontSize: 7 },
+      margin: { left: margin, right: margin },
+    });
+    y = doc.lastAutoTable.finalY + 6;
+  }
+
+  // ---------- MEDICATIONS ----------
+  if (health.meds.length > 0) {
+    if (y > 240) { doc.addPage(); y = margin; }
+    doc.setFontSize(11); doc.setTextColor(0, 104, 122); doc.setFont(undefined, 'bold');
+    doc.text('Medications & supplements', margin, y); y += 5;
+    doc.autoTable({
+      startY: y,
+      head: [['Name', 'Dose', 'Category', 'Started', 'Ended']],
+      body: health.meds.map(m => [m.name, m.dose || '', m.category || '', m.start_date || '', m.end_date || 'Ongoing']),
+      theme: 'striped', styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [0, 104, 122], textColor: 255 },
+      margin: { left: margin, right: margin },
+    });
+    y = doc.lastAutoTable.finalY + 6;
+  }
+
+  // ---------- LABS ----------
+  if (health.labs.length > 0) {
+    if (y > 240) { doc.addPage(); y = margin; }
+    doc.setFontSize(11); doc.setTextColor(0, 104, 122); doc.setFont(undefined, 'bold');
+    doc.text('Lab results', margin, y); y += 5;
+    doc.autoTable({
+      startY: y,
+      head: [['Date', 'Marker', 'Value', 'Unit', 'Range']],
+      body: health.labs.map(l => [l.test_date, l.marker, l.value, l.unit || '', (l.reference_low !== null && l.reference_high !== null) ? `${l.reference_low}–${l.reference_high}` : '']),
+      theme: 'striped', styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [0, 104, 122], textColor: 255 },
+      margin: { left: margin, right: margin },
+    });
+    y = doc.lastAutoTable.finalY + 6;
+  }
+
+  // ---------- BODY SCANS ----------
+  if (health.scans.length > 0) {
+    if (y > 240) { doc.addPage(); y = margin; }
+    doc.setFontSize(11); doc.setTextColor(0, 104, 122); doc.setFont(undefined, 'bold');
+    doc.text('Body composition scans', margin, y); y += 5;
+    doc.autoTable({
+      startY: y,
+      head: [['Date', `Weight ${weightUnit(unit)}`, 'BF %', `Muscle ${weightUnit(unit)}`, 'Water %', 'Visc fat']],
+      body: health.scans.map(s => [s.scan_date,
+        s.weight_kg ? fmt1(toDisplayWeight(s.weight_kg, unit)) : '',
+        s.body_fat_pct ?? '',
+        s.muscle_mass_kg ? fmt1(toDisplayWeight(s.muscle_mass_kg, unit)) : (s.lean_mass_kg ? fmt1(toDisplayWeight(s.lean_mass_kg, unit)) : ''),
+        s.body_water_pct ?? '',
+        s.visceral_fat ?? '']),
+      theme: 'striped', styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [0, 104, 122], textColor: 255 },
+      margin: { left: margin, right: margin },
+    });
+    y = doc.lastAutoTable.finalY + 6;
+  }
+
+  // ---------- DAILY LOG TABLE ----------
+  doc.addPage(); y = margin;
+  doc.setFontSize(11); doc.setTextColor(0, 104, 122); doc.setFont(undefined, 'bold');
+  doc.text('Daily log', margin, y); y += 5;
+  doc.autoTable({
+    startY: y,
+    head: [['Date', `Wt`, 'BF%', 'HRV', 'RHR', 'Sleep', 'Stps', 'Cal in', 'Cal out', 'Prot', 'Alc', 'Sess']],
+    body: filtered.map(l => [l.date,
+      l.weight_kg ? fmt1(toDisplayWeight(l.weight_kg, unit)) : '',
+      l.body_fat_pct ?? '', l.hrv ?? '', l.rhr ?? '',
+      l.sleep_hours ?? '', l.steps ?? '', l.calories_in ?? '', l.calories_out ?? '',
+      l.protein_g ?? '', l.alcohol_units ?? '', (l.sessions || []).length || '']),
+    theme: 'striped', styles: { fontSize: 7, cellPadding: 1.2 },
+    headStyles: { fillColor: [0, 104, 122], textColor: 255, fontSize: 7 },
+    margin: { left: margin, right: margin },
+  });
+
+  // ---------- FOOTER on every page ----------
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7); doc.setTextColor(140);
+    doc.text('Train With Me · Educational use only — not medical advice', margin, 290);
+    doc.text(`Page ${i} of ${pageCount}`, pageW - margin, 290, { align: 'right' });
+  }
+
+  doc.save(`train-with-me-${dateFrom}-to-${dateTo}.pdf`);
+}
+
+function ExportSection({ profile, logs }) {
+  const [open, setOpen] = useState(false);
+  const [range, setRange] = useState('7d');
+  const [customFrom, setCustomFrom] = useState(ymd(new Date(today().getTime() - 30 * 86400000)));
+  const [customTo, setCustomTo] = useState(ymd(today()));
+  const [busy, setBusy] = useState(false);
+
+  const getRange = () => {
+    if (range === '7d') return { from: ymd(new Date(today().getTime() - 6 * 86400000)), to: ymd(today()) };
+    if (range === '30d') return { from: ymd(new Date(today().getTime() - 29 * 86400000)), to: ymd(today()) };
+    return { from: customFrom, to: customTo };
+  };
+
+  async function doPDF() {
+    setBusy(true);
+    try {
+      const { from, to } = getRange();
+      await exportPDF(logs, profile, from, to);
+    } catch (e) { alert('PDF export failed: ' + e.message); }
+    setBusy(false);
+  }
+  function doCSV() {
+    const { from, to } = getRange();
+    exportCSV(logs, profile, from, to);
+  }
+
+  if (!open) {
+    return (
+      <div style={{ marginBottom: 18 }}>
+        <button onClick={() => setOpen(true)} className="btn-ghost" style={{ padding: '8px 16px', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          📄 Export for your practitioner
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: 18, borderLeft: '4px solid var(--teal)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+        <div>
+          <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Export for your practitioner</h3>
+          <p style={{ fontSize: 12, color: 'var(--text-mute)' }}>PDF report with charts, or raw data as CSV.</p>
+        </div>
+        <button onClick={() => setOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', fontSize: 18 }}>×</button>
+      </div>
+
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+        {[
+          { id: '7d', label: 'Last 7 days' },
+          { id: '30d', label: 'Last 30 days' },
+          { id: 'custom', label: 'Custom range' },
+        ].map(r => (
+          <button key={r.id} onClick={() => setRange(r.id)} style={{
+            padding: '8px 14px', borderRadius: 8,
+            background: range === r.id ? 'var(--teal)' : 'white',
+            color: range === r.id ? 'white' : 'var(--text)',
+            border: `1px solid ${range === r.id ? 'var(--teal)' : 'var(--border)'}`,
+            fontSize: 12, fontWeight: 600, cursor: 'pointer',
+          }}>{r.label}</button>
+        ))}
+      </div>
+
+      {range === 'custom' && (
+        <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+          <div>
+            <div className="field-label">From</div>
+            <input type="date" className="input" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} style={{ width: 160 }} />
+          </div>
+          <div>
+            <div className="field-label">To</div>
+            <input type="date" className="input" value={customTo} onChange={(e) => setCustomTo(e.target.value)} max={ymd(today())} style={{ width: 160 }} />
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <button onClick={doPDF} disabled={busy} className="btn" style={{ padding: '10px 18px', fontSize: 13 }}>
+          {busy ? 'Building…' : '📄 Download PDF'}
+        </button>
+        <button onClick={doCSV} className="btn-ghost" style={{ padding: '10px 18px', fontSize: 13 }}>
+          📊 Download CSV
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // COACH — merged Review + What's working + Goals picker
 // 4 modes: Week / Month / All time / Goals
 // ============================================================
@@ -3338,6 +3783,8 @@ function CoachView({ profile, logs }) {
     <div className="fade-in">
       <h1 className="page-title">Insights</h1>
       <p className="page-sub">Your data, analysed. Pick a time scope or ask a specific question.</p>
+
+      <ExportSection profile={profile} logs={logs} />
 
       {/* Mode toggle */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 18, flexWrap: 'wrap' }}>
@@ -3673,7 +4120,7 @@ function BodyScansSection({ scans, unit, onChange }) {
           <div key={scan.id} className="card" style={{ marginBottom: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
               <div>
-                <div style={{ fontSize: 15, fontWeight: 700 }}>Body scan · {scan.scan_date}</div>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>{scan.scan_type || 'Scan'} · {scan.scan_date}</div>
               </div>
               <button onClick={async () => { if (confirm('Delete this scan?')) { await db.from('body_scans').delete().eq('id', scan.id); onChange(); } }} style={{ background: 'transparent', border: 'none', color: 'var(--text-faint)', fontSize: 12, cursor: 'pointer' }}>Delete</button>
             </div>
@@ -3684,8 +4131,8 @@ function BodyScansSection({ scans, unit, onChange }) {
               <ScanMetric label="Fat mass" value={scan.fat_mass_kg} prev={prev?.fat_mass_kg} unit={weightUnit(unit)} convert={(v) => toDisplayWeight(v, unit)} lowerBetter />
               <ScanMetric label="Visceral fat" value={scan.visceral_fat} prev={prev?.visceral_fat} lowerBetter />
               <ScanMetric label="Bone density" value={scan.bone_density} prev={prev?.bone_density} higherBetter />
-              <ScanMetric label="Muscle mass" value={scan.muscle_mass_kg} prev={prev?.muscle_mass_kg} unit={weightUnit(unit)} convert={(v) => toDisplayWeight(v, unit)} higherBetter />
-              <ScanMetric label="Body water %" value={scan.body_water_pct} prev={prev?.body_water_pct} unit="%" />
+              <ScanMetric label="Android fat %" value={scan.android_fat_pct} prev={prev?.android_fat_pct} unit="%" lowerBetter />
+              <ScanMetric label="Gynoid fat %" value={scan.gynoid_fat_pct} prev={prev?.gynoid_fat_pct} unit="%" />
             </div>
             {scan.notes && <p style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 12, lineHeight: 1.5, fontStyle: 'italic' }}>{scan.notes}</p>}
           </div>
@@ -3720,14 +4167,15 @@ function ScanMetric({ label, value, prev, unit = '', convert, higherBetter, lowe
 
 function BodyScanForm({ unit, onSave, onCancel }) {
   const [date, setDate] = useState(ymd(today()));
+  const [type, setType] = useState('DEXA');
   const [w, setW] = useState('');
   const [bf, setBf] = useState('');
-  const [muscleMass, setMuscleMass] = useState('');
-  const [bodyWaterPct, setBodyWaterPct] = useState('');
   const [lean, setLean] = useState('');
   const [fat, setFat] = useState('');
   const [visc, setVisc] = useState('');
   const [bone, setBone] = useState('');
+  const [android, setAndroid] = useState('');
+  const [gynoid, setGynoid] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   async function save() {
@@ -3736,10 +4184,9 @@ function BodyScanForm({ unit, onSave, onCancel }) {
     await db.from('body_scans').insert({
       user_id: user.id,
       scan_date: date,
+      scan_type: type,
       weight_kg: w ? fromDisplayWeight(Number(w), unit) : null,
       body_fat_pct: bf ? Number(bf) : null,
-      muscle_mass_kg: muscleMass ? fromDisplayWeight(Number(muscleMass), unit) : null,
-      body_water_pct: bodyWaterPct ? Number(bodyWaterPct) : null,
       lean_mass_kg: lean ? fromDisplayWeight(Number(lean), unit) : null,
       fat_mass_kg: fat ? fromDisplayWeight(Number(fat), unit) : null,
       visceral_fat: visc ? Number(visc) : null,
@@ -3755,14 +4202,17 @@ function BodyScanForm({ unit, onSave, onCancel }) {
     <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: 16, marginTop: 12 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 12 }}>
         <div><div className="field-label">Date</div><input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+        <div><div className="field-label">Scan type</div>
+          <select className="input" value={type} onChange={(e) => setType(e.target.value)}>
+            <option>DEXA</option><option>InBody</option><option>Hume</option><option>Other</option>
+          </select>
+        </div>
         <div><div className="field-label">Weight ({weightUnit(unit)})</div><input type="number" step="0.1" className="input" value={w} onChange={(e) => setW(e.target.value)} /></div>
         <div><div className="field-label">Body fat %</div><input type="number" step="0.1" className="input" value={bf} onChange={(e) => setBf(e.target.value)} /></div>
-        <div><div className="field-label">Muscle mass ({weightUnit(unit)})</div><input type="number" step="0.1" className="input" value={muscleMass} onChange={(e) => setMuscleMass(e.target.value)} /></div>
-        <div><div className="field-label">Body water %</div><input type="number" step="0.1" className="input" value={bodyWaterPct} onChange={(e) => setBodyWaterPct(e.target.value)} /></div>
         <div><div className="field-label">Lean mass ({weightUnit(unit)})</div><input type="number" step="0.1" className="input" value={lean} onChange={(e) => setLean(e.target.value)} /></div>
         <div><div className="field-label">Fat mass ({weightUnit(unit)})</div><input type="number" step="0.1" className="input" value={fat} onChange={(e) => setFat(e.target.value)} /></div>
         <div><div className="field-label">Visceral fat</div><input type="number" step="0.1" className="input" value={visc} onChange={(e) => setVisc(e.target.value)} /></div>
-        <div><div className="field-label">Bone mass ({weightUnit(unit)})</div><input type="number" step="0.01" className="input" value={bone} onChange={(e) => setBone(e.target.value)} /></div>
+        <div><div className="field-label">Bone density</div><input type="number" step="0.01" className="input" value={bone} onChange={(e) => setBone(e.target.value)} /></div>
         <div><div className="field-label">Android fat %</div><input type="number" step="0.1" className="input" value={android} onChange={(e) => setAndroid(e.target.value)} /></div>
         <div><div className="field-label">Gynoid fat %</div><input type="number" step="0.1" className="input" value={gynoid} onChange={(e) => setGynoid(e.target.value)} /></div>
       </div>
@@ -3774,6 +4224,7 @@ function BodyScanForm({ unit, onSave, onCancel }) {
     </div>
   );
 }
+
 // ---------- Symptoms (peri-specific daily log) ----------
 function SymptomsSection({ symptoms, onChange }) {
   const [adding, setAdding] = useState(false);
