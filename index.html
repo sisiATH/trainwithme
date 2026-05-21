@@ -2351,6 +2351,9 @@ function WeightTrends({ profile, logs }) {
   const bf = last30.map(l => l.body_fat_pct || null);
   const muscle = last30.map(l => l.muscle_kg ? toDisplayWeight(l.muscle_kg, unit) : null);
   const water = last30.map(l => l.body_water_pct || null);
+  const calIn30 = last30.map(l => l.calories_in || null);
+  const calOut30 = last30.map(l => l.calories_out || null);
+  const steps30 = last30.map(l => l.steps || null);
 
   const w7 = avg(logs.slice(-7), 'weight_kg');
   const w14 = avg(logs.slice(-14), 'weight_kg');
@@ -2509,7 +2512,7 @@ function WeightTrends({ profile, logs }) {
         </div>
       </div>
 
-      <div className="card">
+      <div className="card" style={{ marginBottom: 14 }}>
         <div className="label" style={{ marginBottom: 4 }}>Weight × Body water · 30 days</div>
         <p style={{ fontSize: 12, color: 'var(--text-mute)', marginBottom: 8 }}>When weight spikes line up with body water spikes, it's water, not fat. Watch them move together.</p>
         <ChartLegend items={[
@@ -2520,6 +2523,38 @@ function WeightTrends({ profile, logs }) {
           <MultiLineChart series={[
             { values: weights, color: '#00687a', axis: 'left' },
             { values: water, color: '#ff5bcf', axis: 'right' },
+          ]} h={160} />
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div className="label" style={{ marginBottom: 4 }}>Calories in × out × Weight · 30 days</div>
+        <p style={{ fontSize: 12, color: 'var(--text-mute)', marginBottom: 8 }}>Did your deficit actually move the scale? Watch where calories-out exceeds calories-in and what weight did next.</p>
+        <ChartLegend items={[
+          { color: '#ff5bcf', label: 'Calories in' },
+          { color: '#00687a', label: 'Calories out' },
+          { color: '#cfff04', label: `Weight (${weightUnit(unit)})` },
+        ]} />
+        <div style={{ marginTop: 8 }}>
+          <MultiLineChart series={[
+            { values: calIn30, color: '#ff5bcf', axis: 'left' },
+            { values: calOut30, color: '#00687a', axis: 'left' },
+            { values: weights, color: '#cfff04', axis: 'right' },
+          ]} h={180} />
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="label" style={{ marginBottom: 4 }}>Steps × Weight · 30 days</div>
+        <p style={{ fontSize: 12, color: 'var(--text-mute)', marginBottom: 8 }}>NEAT is where the deficit lives — see if days walking more correlate with weight moving down.</p>
+        <ChartLegend items={[
+          { color: '#00687a', label: 'Daily steps' },
+          { color: '#ff5bcf', label: `Weight (${weightUnit(unit)})` },
+        ]} />
+        <div style={{ marginTop: 8 }}>
+          <MultiLineChart series={[
+            { values: steps30, color: '#00687a', axis: 'left' },
+            { values: weights, color: '#ff5bcf', axis: 'right' },
           ]} h={160} />
         </div>
       </div>
