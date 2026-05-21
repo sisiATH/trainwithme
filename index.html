@@ -794,6 +794,195 @@ function behaviourScorecard(logs, profile) {
 }
 
 // ============================================================
+// WHAT MOVES YOUR SCALE — extended analysis that ALSO checks:
+// - AM vs PM exercise timing effect on next-day weight
+// - NEAT (steps) vs structured exercise effect
+// - Plus the standard scorecard items
+// Each finding has a confidence level based on data points
+// ============================================================
+function whatMovesYourScale(logs, profile) {
+  const unit = profile.unit_system || 'kg';
+  const findings = [];
+  const totalDays = logs.length;
+
+  // Pull pairs of [day's value, next-morning weight change]
+  const pairs = (key, filterFn = null, valueFn = null) => {
+    const out = [];
+    for (let i = 0; i < logs.length - 1; i++) {
+      let v = valueFn ? valueFn(logs[i]) : logs[i][key];
+      if (v === null || v === undefined || v === '' || (typeof v === 'number' && isNaN(v))) continue;
+      if (!logs[i].weight_kg || !logs[i+1].weight_kg) continue;
+      if (filterFn && !filterFn(v)) continue;
+      out.push({ v: typeof v === 'boolean' ? (v ? 1 : 0) : Number(v), dw: logs[i+1].weight_kg - logs[i].weight_kg });
+    }
+    return out;
+  };
+
+  const confidence = (n) => n >= 14 ? 'strong' : n >= 7 ? 'building' : 'early';
+
+  const splitAnalyze = ({ name, key, threshold, higherIsBetter = true, unitLabel = '', valueFn = null, customLabels = null }) => {
+    const all = pairs(key, null, valueFn);
+    if (all.length < 3) return null;
+    let above, below, labelGood, labelBad;
+    if (threshold !== undefined) {
+      above = all.filter(p => p.v >= threshold);
+      below = all.filter(p => p.v < threshold);
+      labelGood = customLabels?.good || `${name} ≥${threshold}${unitLabel}`;
+      labelBad = customLabels?.bad || `${name} <${threshold}${unitLabel}`;
+    } else {
+      const sorted = [...all].sort((a,b) => a.v - b.v);
+      const mid = sorted[Math.floor(sorted.length / 2)].v;
+      above = all.filter(p => p.v >= mid);
+      below = all.filter(p => p.v < mid);
+      labelGood = `${name} ≥${fmt1(mid)}${unitLabel}`;
+      labelBad = `${name} <${fmt1(mid)}${unitLabel}`;
+    }
+    if (above.length < 2 || below.length < 2) return null;
+    const dwAbove = above.reduce((s,p) => s+p.dw, 0) / above.length;
+    const dwBelow = below.reduce((s,p) => s+p.dw, 0) / below.length;
+    const goodGroup = higherIsBetter ? dwAbove : dwBelow;
+    const badGroup = higherIsBetter ? dwBelow : dwAbove;
+    const goodLabel = higherIsBetter ? labelGood : labelBad;
+    const badLabel = higherIsBetter ? labelBad : labelGood;
+    const diff = badGroup - goodGroup;
+    if (Math.abs(diff) < 0.05) return null;
+    const helps = diff > 0; // good group lost more
+    return {
+      name,
+      helps,
+      impact: diff,
+      goodLabel,
+      badLabel,
+      goodGroup,
+      badGroup,
+      dataPoints: all.length,
+      confidence: confidence(all.length),
+      detail: helps
+        ? `On days with ${goodLabel.toLowerCase()}, you lost ${fmt1(toDisplayWeight(Math.abs(goodGroup), unit))} ${weightUnit(unit)} on average next morning. On ${badLabel.toLowerCase()} days, you ${badGroup > 0 ? `gained ${fmt1(toDisplayWeight(badGroup, unit))}` : 'held steady'}.`
+        : `${name} doesn't appear to move your scale either direction yet.`,
+    };
+  };
+
+  // 1. STANDARD HABITS
+  const baseAnalyses = [
+    { name: 'Sleep', key: 'sleep_hours', threshold: 7.5, unitLabel: 'h', higherIsBetter: true },
+    { name: 'Protein', key: 'protein_g', threshold: profile.protein_target || 110, unitLabel: 'g', higherIsBetter: true },
+    { name: 'Steps', key: 'steps', threshold: profile.baseline_steps || 8000, higherIsBetter: true },
+    { name: 'Calories burned', key: 'calories_out', higherIsBetter: true },
+    { name: 'Alcohol', key: 'alcohol_units', threshold: 0.5, unitLabel: 'u', higherIsBetter: false },
+    { name: 'Water', key: 'water_l', threshold: profile.water_target || 2.5, unitLabel: 'L', higherIsBetter: true },
+    { name: 'Sleep quality', key: 'sleep_quality', threshold: 4, higherIsBetter: true },
+    { name: 'Stress', key: 'stress', threshold: 3, higherIsBetter: false },
+  ];
+  for (const a of baseAnalyses) {
+    const result = splitAnalyze(a);
+    if (result) findings.push(result);
+  }
+
+  // 2. CALORIE DEFICIT analysis (special — derive from in/out)
+  const deficitResult = splitAnalyze({
+    name: 'Calorie deficit',
+    key: 'deficit',
+    threshold: 400,
+    unitLabel: ' kcal',
+    higherIsBetter: true,
+    valueFn: (l) => (l.calories_in && l.calories_out) ? l.calories_out - l.calories_in : null,
+  });
+  if (deficitResult) findings.push(deficitResult);
+
+  // 3. AM vs PM EXERCISE (when did you train? does timing matter?)
+  const amPmPairs = [];
+  for (let i = 0; i < logs.length - 1; i++) {
+    const sessions = logs[i].sessions || [];
+    if (sessions.length === 0) continue;
+    if (!logs[i].weight_kg || !logs[i+1].weight_kg) continue;
+    const am = sessions.some(s => s.timeOfDay === 'AM');
+    const pm = sessions.some(s => s.timeOfDay === 'PM');
+    if (am && !pm) amPmPairs.push({ when: 'AM', dw: logs[i+1].weight_kg - logs[i].weight_kg });
+    else if (pm && !am) amPmPairs.push({ when: 'PM', dw: logs[i+1].weight_kg - logs[i].weight_kg });
+  }
+  if (amPmPairs.length >= 4) {
+    const am = amPmPairs.filter(p => p.when === 'AM');
+    const pm = amPmPairs.filter(p => p.when === 'PM');
+    if (am.length >= 2 && pm.length >= 2) {
+      const dwAm = am.reduce((s,p) => s+p.dw, 0) / am.length;
+      const dwPm = pm.reduce((s,p) => s+p.dw, 0) / pm.length;
+      const diff = dwPm - dwAm; // positive = AM training lost more
+      if (Math.abs(diff) >= 0.1) {
+        const better = diff > 0 ? 'AM' : 'PM';
+        const worse = diff > 0 ? 'PM' : 'AM';
+        findings.push({
+          name: 'Training time of day',
+          helps: true,
+          impact: Math.abs(diff),
+          goodLabel: `${better} training`,
+          badLabel: `${worse} training`,
+          dataPoints: amPmPairs.length,
+          confidence: confidence(amPmPairs.length),
+          detail: `${better} sessions: ${fmt1(toDisplayWeight(Math.abs(diff > 0 ? dwAm : dwPm), unit))} ${weightUnit(unit)} lost on average. ${worse} sessions: less effect. Could be physiological, could be coincidence — needs more data.`,
+        });
+      }
+    }
+  }
+
+  // 4. NEAT (steps) vs STRUCTURED EXERCISE
+  // For each day, classify as "high NEAT" (top half of steps), "high structured" (has hard session), or both
+  const neatVsExercise = [];
+  const stepDays = logs.filter(l => l.steps && l.weight_kg);
+  if (stepDays.length >= 5) {
+    const sortedSteps = [...stepDays].sort((a,b) => a.steps - b.steps);
+    const stepMedian = sortedSteps[Math.floor(sortedSteps.length / 2)].steps;
+    for (let i = 0; i < logs.length - 1; i++) {
+      if (!logs[i].weight_kg || !logs[i+1].weight_kg || !logs[i].steps) continue;
+      const sessions = logs[i].sessions || [];
+      const hasHard = sessions.some(s => ['Strength', 'HIIT', 'Run', 'Long endurance', 'Football'].includes(s.type));
+      const highNeat = logs[i].steps >= stepMedian;
+      const dw = logs[i+1].weight_kg - logs[i].weight_kg;
+      let category;
+      if (highNeat && !hasHard) category = 'NEAT only';
+      else if (!highNeat && hasHard) category = 'Exercise only';
+      else if (highNeat && hasHard) category = 'Both';
+      else category = 'Neither';
+      neatVsExercise.push({ category, dw });
+    }
+    const groups = {};
+    for (const p of neatVsExercise) {
+      if (!groups[p.category]) groups[p.category] = [];
+      groups[p.category].push(p.dw);
+    }
+    const groupAvgs = Object.entries(groups)
+      .filter(([_, vals]) => vals.length >= 2)
+      .map(([cat, vals]) => ({ cat, avg: vals.reduce((s,v) => s+v, 0) / vals.length, n: vals.length }));
+    if (groupAvgs.length >= 2) {
+      const best = groupAvgs.reduce((a, b) => a.avg < b.avg ? a : b);
+      const worst = groupAvgs.reduce((a, b) => a.avg > b.avg ? a : b);
+      if (best.cat !== worst.cat && Math.abs(best.avg - worst.avg) >= 0.1) {
+        findings.push({
+          name: 'NEAT vs structured exercise',
+          helps: true,
+          impact: Math.abs(best.avg - worst.avg),
+          goodLabel: best.cat,
+          badLabel: worst.cat,
+          dataPoints: neatVsExercise.length,
+          confidence: confidence(neatVsExercise.length),
+          detail: `Your scale moved most on "${best.cat}" days (${fmt1(toDisplayWeight(Math.abs(best.avg), unit))} ${weightUnit(unit)} avg) and least on "${worst.cat}" days. NEAT = total steps, Exercise = structured strength/cardio session.`,
+        });
+      }
+    }
+  }
+
+  // Sort by impact magnitude
+  findings.sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact));
+
+  return {
+    findings,
+    daysLogged: totalDays,
+    ready: totalDays >= 5,
+    daysNeeded: Math.max(0, 5 - totalDays),
+  };
+}
+
+// ============================================================
 // DIAGNOSE — real analysis of a day or week's data
 // Returns plain-English diagnostic messages explaining what's working and what isn't
 // Used by dashboard's "Today's prompt" and the Review tab
@@ -1698,11 +1887,80 @@ function Dashboard({ profile, logs, todayLog, setView }) {
   const progress = progressStatus(logs, profile);
   const changes = whatChanged(logs, profile, todayLog);
   const diagnosis = useMemo(() => diagnoseDay(todayLog, profile, logs), [todayLog, profile, logs]);
+  const movers = useMemo(() => whatMovesYourScale(logs, profile), [logs, profile]);
 
   return (
     <div className="fade-in">
       <h1 className="page-title">Dashboard</h1>
-      <p className="page-sub">Today's signal — what's changing and what to do about it.</p>
+      <p className="page-sub">What moves your scale — based on your data.</p>
+
+      {/* HERO: What moves your scale */}
+      <div className="card-gradient" style={{ marginBottom: 18 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+          <span className="pill pill-pink">What moves your scale</span>
+          <span style={{ fontSize: 11, color: 'var(--text-mute)' }}>{movers.daysLogged} days logged</span>
+        </div>
+
+        {!movers.ready && (
+          <>
+            <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 10, color: 'var(--text)' }}>
+              Patterns appear after {movers.daysNeeded} more day{movers.daysNeeded === 1 ? '' : 's'} of logging
+            </h2>
+            <p style={{ fontSize: 14, color: 'var(--text-mute)', lineHeight: 1.6 }}>
+              The app needs weight + at least one habit (sleep, steps, protein, water) logged consistently. Keep going — week 1 builds the baseline, week 2 starts answering the questions you have.
+            </p>
+          </>
+        )}
+
+        {movers.ready && movers.findings.length === 0 && (
+          <>
+            <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 10, color: 'var(--text)' }}>
+              Not enough variation yet
+            </h2>
+            <p style={{ fontSize: 14, color: 'var(--text-mute)', lineHeight: 1.6 }}>
+              Your habits have been too consistent to tell which one is moving the scale. As your numbers vary day-to-day naturally, patterns will surface.
+            </p>
+          </>
+        )}
+
+        {movers.ready && movers.findings.length > 0 && (
+          <>
+            <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 14, color: 'var(--text)', lineHeight: 1.25 }}>
+              Top {Math.min(movers.findings.length, 4)} thing{movers.findings.length === 1 ? '' : 's'} moving your scale right now:
+            </h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {movers.findings.slice(0, 4).map((f, i) => {
+                const confColor = f.confidence === 'strong' ? 'var(--success)' : f.confidence === 'building' ? 'var(--warn)' : 'var(--text-faint)';
+                const confLabel = f.confidence === 'strong' ? 'Strong signal' : f.confidence === 'building' ? 'Building signal' : 'Early signal';
+                return (
+                  <div key={i} style={{ background: 'rgba(255,255,255,0.5)', borderRadius: 10, padding: 14 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-mute)', minWidth: 18 }}>#{i+1}</span>
+                        <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>{f.name}</span>
+                      </div>
+                      <span style={{ fontSize: 10, color: confColor, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                        ● {confLabel} · {f.dataPoints} days
+                      </span>
+                    </div>
+                    <p style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.55, marginLeft: 26 }}>{f.detail}</p>
+                  </div>
+                );
+              })}
+            </div>
+            {movers.findings.length > 4 && (
+              <p style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 12, textAlign: 'center' }}>
+                +{movers.findings.length - 4} more pattern{movers.findings.length - 4 === 1 ? '' : 's'} — see Insights for the full ranking
+              </p>
+            )}
+            {movers.findings.some(f => f.confidence === 'early') && (
+              <p style={{ fontSize: 11, color: 'var(--text-mute)', marginTop: 14, fontStyle: 'italic', textAlign: 'center', lineHeight: 1.5 }}>
+                Early signals (under 7 days of data) can flip as more data comes in. Strong signals (14+ days) are more reliable.
+              </p>
+            )}
+          </>
+        )}
+      </div>
 
       {/* Progress strip — keeps users motivated through sparse early weeks */}
       {logs.length < 28 && (
@@ -1732,20 +1990,20 @@ function Dashboard({ profile, logs, todayLog, setView }) {
         </div>
       )}
 
-      {/* Single unified Today's Focus card — no contradictions */}
-      <div className="card-gradient" style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-          <span className="pill pill-pink">Today's focus</span>
-          {phase && <span className="pill pill-teal">{phase} · day {cycleDay}</span>}
+      {/* Today's focus — smaller now, the hero takes priority */}
+      <div className="card" style={{ marginBottom: 16, borderLeft: '4px solid var(--pink)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+          <span className="label" style={{ color: 'var(--pink)' }}>Today's focus</span>
+          {phase && <span style={{ fontSize: 11, color: 'var(--text-mute)' }}>{phase} · day {cycleDay}</span>}
         </div>
-        <h2 style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.25, marginBottom: 10, color: 'var(--text)' }}>
+        <h3 style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.3, marginBottom: 8, color: 'var(--text)' }}>
           {focus.headline}
-        </h2>
-        <p style={{ fontSize: 14, color: 'var(--text-mute)', lineHeight: 1.6, marginBottom: focus.action ? 12 : 0 }}>
+        </h3>
+        <p style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.55, marginBottom: focus.action ? 8 : 0 }}>
           {focus.detail}
         </p>
         {focus.action && (
-          <p style={{ fontSize: 13, color: 'var(--teal)', fontWeight: 600, lineHeight: 1.5 }}>
+          <p style={{ fontSize: 12, color: 'var(--teal)', fontWeight: 600, lineHeight: 1.5 }}>
             → {focus.action}
           </p>
         )}
