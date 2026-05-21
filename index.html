@@ -200,8 +200,22 @@ function calcRecovery(t, baselines) {
   if (!t) return null;
   const { hrv, rhr, sleep_quality } = t;
   const { hrvAvg, rhrAvg } = baselines;
-  if (!hrv || !rhr || !sleep_quality || !hrvAvg || !rhrAvg) return null;
-  return (hrv / hrvAvg) * 0.4 + (rhrAvg / rhr) * 0.3 + (sleep_quality / 5) * 0.3;
+  // Need HRV + baseline OR RHR + baseline minimum — sleep_quality is optional and lightly weighted
+  const haveHrv = hrv && hrvAvg && hrv > 0 && hrvAvg > 0;
+  const haveRhr = rhr && rhrAvg && rhr > 0 && rhrAvg > 0;
+  if (!haveHrv && !haveRhr) return null;
+  const haveSleep = sleep_quality && sleep_quality > 0;
+
+  // Compute each component as a 0.7-1.3 ratio (centered on 1.0 = normal)
+  // HRV: higher is better, so hrv/hrvAvg (above 1 = good)
+  // RHR: lower is better, so rhrAvg/rhr (above 1 = good, since lower today/higher avg means today is better)
+  // Sleep: optional and lighter — only adjusts the score, doesn't tank it
+  let score = 0;
+  let weight = 0;
+  if (haveHrv) { score += (hrv / hrvAvg) * 0.5; weight += 0.5; }
+  if (haveRhr) { score += (rhrAvg / rhr) * 0.4; weight += 0.4; }
+  if (haveSleep) { score += (sleep_quality / 4) * 0.1; weight += 0.1; } // 4/5 is "good" baseline
+  return score / weight;
 }
 function recoveryLabel(s) {
   if (s === null) return { label: 'Not enough data', tone: 'neutral' };
@@ -1787,6 +1801,55 @@ function Dashboard({ profile, logs, todayLog, setView }) {
           </div>
         </div>
       )}
+
+      {/* Recovery trend — HRV + RHR over 14 days so you can SEE what the app sees */}
+      {(() => {
+        const last14 = [];
+        for (let i = 13; i >= 0; i--) {
+          const d = ymd(new Date(today().getTime() - i * 86400000));
+          last14.push(logs.find(l => l.date === d) || {});
+        }
+        const hrvVals = last14.map(l => l.hrv || null);
+        const rhrVals = last14.map(l => l.rhr || null);
+        const hrvCount = hrvVals.filter(v => v !== null).length;
+        const rhrCount = rhrVals.filter(v => v !== null).length;
+        if (hrvCount < 2 && rhrCount < 2) return null;
+        const latestHrv = [...hrvVals].reverse().find(v => v !== null);
+        const latestRhr = [...rhrVals].reverse().find(v => v !== null);
+        const hrvBaseline = baselines.hrvAvg;
+        const rhrBaseline = baselines.rhrAvg;
+        return (
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
+              <div className="label">Recovery trend · 14 days</div>
+              <div style={{ display: 'flex', gap: 18, fontSize: 12, color: 'var(--text-mute)' }}>
+                {latestHrv && hrvBaseline && (
+                  <span>
+                    HRV today: <strong style={{ color: latestHrv >= hrvBaseline ? 'var(--success)' : 'var(--pink)' }}>{latestHrv}ms</strong>
+                    {' '}<span style={{ color: 'var(--text-faint)' }}>(avg {fmt0(hrvBaseline)})</span>
+                  </span>
+                )}
+                {latestRhr && rhrBaseline && (
+                  <span>
+                    RHR today: <strong style={{ color: latestRhr <= rhrBaseline ? 'var(--success)' : 'var(--pink)' }}>{latestRhr}bpm</strong>
+                    {' '}<span style={{ color: 'var(--text-faint)' }}>(avg {fmt0(rhrBaseline)})</span>
+                  </span>
+                )}
+              </div>
+            </div>
+            <ChartLegend items={[
+              { color: '#00687a', label: 'HRV (ms) — higher is better' },
+              { color: '#ff5bcf', label: 'RHR (bpm) — lower is better' },
+            ]} />
+            <div style={{ marginTop: 6 }}>
+              <MultiLineChart series={[
+                { values: hrvVals, color: '#00687a', axis: 'left' },
+                { values: rhrVals, color: '#ff5bcf', axis: 'right' },
+              ]} h={160} />
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Key metrics row */}
       <div className="row row-5" style={{ marginBottom: 16 }}>
