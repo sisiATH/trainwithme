@@ -1903,11 +1903,36 @@ function Dashboard({ profile, logs, todayLog, setView }) {
 
         {!movers.ready && (
           <>
-            <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 10, color: 'var(--text)' }}>
-              Patterns appear after {movers.daysNeeded} more day{movers.daysNeeded === 1 ? '' : 's'} of logging
+            <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 14, color: 'var(--text)', lineHeight: 1.25 }}>
+              Day {movers.daysLogged} of logging — patterns coming.
             </h2>
-            <p style={{ fontSize: 14, color: 'var(--text-mute)', lineHeight: 1.6 }}>
-              The app needs weight + at least one habit (sleep, steps, protein, water) logged consistently. Keep going — week 1 builds the baseline, week 2 starts answering the questions you have.
+            <p style={{ fontSize: 14, color: 'var(--text-mute)', lineHeight: 1.6, marginBottom: 16 }}>
+              No app can tell you what moves your scale in week 1 — including this one. The honest answer is: not enough data yet. Here's what unlocks as you keep logging:
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {[
+                { day: 5, label: 'Day 5', what: 'First patterns appear — which habits correlate with weight movement', done: movers.daysLogged >= 5 },
+                { day: 7, label: 'Day 7', what: 'Behaviour scorecard becomes reliable — your top 2-3 levers ranked', done: movers.daysLogged >= 7 },
+                { day: 14, label: 'Day 14', what: 'Strong signals — cycle phase patterns, weekly trends, full diagnosis', done: movers.daysLogged >= 14 },
+                { day: 21, label: 'Day 21', what: 'AM vs PM training, NEAT vs exercise comparison — your personal experiments', done: movers.daysLogged >= 21 },
+                { day: 28, label: 'Day 28', what: 'Body composition story — fat vs muscle vs water clearly separated', done: movers.daysLogged >= 28 },
+              ].map((m, i) => (
+                <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', opacity: m.done ? 1 : 0.6 }}>
+                  <div style={{
+                    minWidth: 26, height: 26, borderRadius: 13, fontSize: 11, fontWeight: 700,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: m.done ? 'var(--success)' : 'var(--border)',
+                    color: m.done ? 'white' : 'var(--text-mute)',
+                  }}>{m.done ? '✓' : m.day}</div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{m.label} {m.done && <span style={{ color: 'var(--success)', fontWeight: 500 }}>· unlocked</span>}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 2, lineHeight: 1.5 }}>{m.what}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 14, lineHeight: 1.5, fontStyle: 'italic' }}>
+              In the meantime, use the Logbook (under Daily log → Logbook) to see your own day-by-day patterns.
             </p>
           </>
         )}
@@ -2040,27 +2065,6 @@ function Dashboard({ profile, logs, todayLog, setView }) {
               <button onClick={() => setView('log')} className="btn-ghost" style={{ padding: '8px 16px', fontSize: 12 }}>Open daily log</button>
             </div>
           )}
-        </div>
-      )}
-
-      {/* Today's diagnosis — real analysis of what your data says */}
-      {diagnosis.length > 0 && (
-        <div className="card" style={{ marginBottom: 16, borderLeft: '4px solid var(--teal)' }}>
-          <div className="label" style={{ marginBottom: 12, color: 'var(--teal)' }}>What your numbers say today</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {diagnosis.slice(0, 4).map((d, i) => {
-              const accent = d.tone === 'good' ? 'var(--success)' : d.tone === 'warn' ? 'var(--pink)' : 'var(--teal)';
-              return (
-                <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: accent, marginTop: 8, flexShrink: 0 }} />
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 3 }}>{d.headline}</div>
-                    <div style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.55 }}>{d.detail}</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
         </div>
       )}
 
@@ -2213,8 +2217,136 @@ function Dashboard({ profile, logs, todayLog, setView }) {
 // ============================================================
 // DAILY LOG (full page, own tab)
 // ============================================================
+function Logbook({ logs, profile }) {
+  const unit = profile.unit_system || 'kg';
+  const [expanded, setExpanded] = useState(false);
+  const [range, setRange] = useState(14);
+
+  // Build last N days with logs (most recent first)
+  const days = useMemo(() => {
+    const out = [];
+    for (let i = 0; i < range; i++) {
+      const d = ymd(new Date(today().getTime() - i * 86400000));
+      const log = logs.find(l => l.date === d);
+      out.push({ date: d, log });
+    }
+    return out;
+  }, [logs, range]);
+
+  const hasAnyData = days.some(d => d.log);
+
+  if (!hasAnyData) {
+    return (
+      <div className="card">
+        <p style={{ fontSize: 14, color: 'var(--text-mute)', lineHeight: 1.6, textAlign: 'center', padding: '20px 0' }}>
+          No data logged yet for this range. Start logging — your logbook will fill in here.
+        </p>
+      </div>
+    );
+  }
+
+  // Date column + essentials + (when expanded) full set
+  const essentials = [
+    { key: 'weight', label: 'Weight', val: (l) => l.weight_kg ? fmt1(toDisplayWeight(l.weight_kg, unit)) : '' },
+    { key: 'bf', label: 'BF%', val: (l) => l.body_fat_pct ?? '' },
+    { key: 'sleep', label: 'Sleep', val: (l) => l.sleep_hours ? fmt1(l.sleep_hours) + 'h' : '' },
+    { key: 'steps', label: 'Steps', val: (l) => l.steps ? l.steps.toLocaleString() : '' },
+    { key: 'calin', label: 'Cal in', val: (l) => l.calories_in ?? '' },
+    { key: 'calout', label: 'Cal out', val: (l) => l.calories_out ?? '' },
+    { key: 'protein', label: 'Protein', val: (l) => l.protein_g ? l.protein_g + 'g' : '' },
+    { key: 'sessions', label: 'Sessions', val: (l) => {
+      const ss = l.sessions || [];
+      if (!ss.length) return '';
+      return ss.map(s => `${s.timeOfDay || ''} ${s.type.slice(0,4)}${s.duration}'`).join(', ');
+    }},
+  ];
+  const extras = [
+    { key: 'muscle', label: 'Muscle', val: (l) => l.muscle_kg ? fmt1(toDisplayWeight(l.muscle_kg, unit)) : '' },
+    { key: 'water_pct', label: 'Bdy water%', val: (l) => l.body_water_pct ?? '' },
+    { key: 'hrv', label: 'HRV', val: (l) => l.hrv ?? '' },
+    { key: 'rhr', label: 'RHR', val: (l) => l.rhr ?? '' },
+    { key: 'sleepq', label: 'Sleep Q', val: (l) => l.sleep_quality ? l.sleep_quality + '/5' : '' },
+    { key: 'water', label: 'Water', val: (l) => l.water_l ? fmt1(toDisplayWater(l.water_l, unit)) : '' },
+    { key: 'fibre', label: 'Fibre', val: (l) => l.fibre_g ? l.fibre_g + 'g' : '' },
+    { key: 'caffeine', label: 'Caf cups', val: (l) => l.caffeine_mg ? (l.caffeine_mg/95).toFixed(1) : '' },
+    { key: 'alc', label: 'Alc', val: (l) => l.alcohol_units ? l.alcohol_units + 'u' : '' },
+    { key: 'mood', label: 'Mood', val: (l) => l.mood ? l.mood + '/5' : '' },
+    { key: 'stress', label: 'Stress', val: (l) => l.stress ? l.stress + '/5' : '' },
+    { key: 'period', label: 'Period', val: (l) => l.period_today ? '●' : '' },
+  ];
+  const cols = expanded ? [...essentials, ...extras] : essentials;
+
+  return (
+    <>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {[
+            { id: 7, label: '7 days' },
+            { id: 14, label: '14 days' },
+            { id: 30, label: '30 days' },
+          ].map(r => (
+            <button key={r.id} onClick={() => setRange(r.id)} style={{
+              padding: '6px 12px', borderRadius: 6,
+              background: range === r.id ? 'var(--teal)' : 'white',
+              color: range === r.id ? 'white' : 'var(--text)',
+              border: `1px solid ${range === r.id ? 'var(--teal)' : 'var(--border)'}`,
+              fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            }}>{r.label}</button>
+          ))}
+        </div>
+        <button onClick={() => setExpanded(!expanded)} className="btn-ghost" style={{ padding: '6px 12px', fontSize: 12 }}>
+          {expanded ? '− Show essentials' : '+ Show all columns'}
+        </button>
+      </div>
+
+      <div className="card" style={{ overflowX: 'auto', padding: 0 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr style={{ background: 'var(--surface-2)', textAlign: 'left' }}>
+              <th style={{ padding: '10px 12px', fontWeight: 600, fontSize: 11, color: 'var(--text-mute)', textTransform: 'uppercase', letterSpacing: 0.5, position: 'sticky', left: 0, background: 'var(--surface-2)', zIndex: 1 }}>Date</th>
+              {cols.map(c => (
+                <th key={c.key} style={{ padding: '10px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-mute)', textTransform: 'uppercase', letterSpacing: 0.5, whiteSpace: 'nowrap' }}>{c.label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {days.map((d, i) => {
+              const isToday = d.date === ymd(today());
+              const empty = !d.log;
+              return (
+                <tr key={d.date} style={{
+                  borderTop: '1px solid var(--divider)',
+                  background: isToday ? 'rgba(0,104,122,0.04)' : 'transparent',
+                  opacity: empty ? 0.4 : 1,
+                }}>
+                  <td style={{ padding: '8px 12px', fontWeight: isToday ? 700 : 500, color: 'var(--text)', position: 'sticky', left: 0, background: isToday ? '#f0f6f7' : 'white', whiteSpace: 'nowrap', borderRight: '1px solid var(--divider)' }}>
+                    {(() => {
+                      const dt = parseYMD(d.date);
+                      return `${dt.toLocaleDateString('en-GB', { weekday: 'short' })} ${dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
+                    })()}
+                  </td>
+                  {cols.map(c => (
+                    <td key={c.key} style={{ padding: '8px', whiteSpace: 'nowrap', color: 'var(--text)' }}>
+                      {empty ? '—' : (c.val(d.log) || '·')}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <p style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 10, lineHeight: 1.5 }}>
+        Look across rows for your own patterns. e.g. "Tuesdays after football I weigh less" — your own observations matter as much as the app's analysis.
+      </p>
+    </>
+  );
+}
+
 function DailyLog({ profile, logs, todayLog, onLogSaved }) {
   const unit = profile.unit_system || 'kg';
+  const [mode, setMode] = useState('log');
   const [date, setDate] = useState(ymd(today()));
   const [weight, setWeight] = useState('');
   const [bodyFat, setBodyFat] = useState('');
@@ -2344,16 +2476,44 @@ function DailyLog({ profile, logs, todayLog, onLogSaved }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, flexWrap: 'wrap', gap: 16 }}>
         <div>
           <h1 className="page-title">Daily log</h1>
-          <p className="page-sub">Fill what you can — come back later to add more.</p>
+          <p className="page-sub">{mode === 'log' ? 'Fill what you can — come back later to add more.' : 'Your data, day by day. Look for your own patterns.'}</p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} style={{ width: 170 }} max={ymd(today())} />
-          <button onClick={saveLog} disabled={saving} className="btn">
-            {saving ? 'Saving…' : savedAt ? '✓ Saved' : 'Save'}
-          </button>
+          {mode === 'log' && (
+            <>
+              <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} style={{ width: 170 }} max={ymd(today())} />
+              <button onClick={saveLog} disabled={saving} className="btn">
+                {saving ? 'Saving…' : savedAt ? '✓ Saved' : 'Save'}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
+      {/* Mode toggle */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 18 }}>
+        {[
+          { id: 'log', label: 'Log a day' },
+          { id: 'book', label: 'Logbook' },
+        ].map(m => (
+          <button
+            key={m.id}
+            onClick={() => setMode(m.id)}
+            style={{
+              padding: '8px 18px', borderRadius: 8,
+              background: mode === m.id ? 'var(--teal)' : 'white',
+              color: mode === m.id ? 'white' : 'var(--text)',
+              border: `1px solid ${mode === m.id ? 'var(--teal)' : 'var(--border)'}`,
+              fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            }}
+          >{m.label}</button>
+        ))}
+      </div>
+
+      {mode === 'book' && <Logbook logs={logs} profile={profile} />}
+
+      {mode === 'log' && (
+        <>
       {/* Quick pick: last 7 days */}
       <div className="card" style={{ marginBottom: 14, padding: 14 }}>
         <div className="label" style={{ marginBottom: 10 }}>Jump to a day</div>
@@ -2485,6 +2645,8 @@ function DailyLog({ profile, logs, todayLog, onLogSaved }) {
       <button onClick={saveLog} disabled={saving} className="btn" style={{ width: '100%', padding: 16, fontSize: 14 }}>
         {saving ? 'Saving…' : savedAt ? '✓ Saved' : 'Save today'}
       </button>
+        </>
+      )}
     </div>
   );
 }
@@ -2629,6 +2791,33 @@ function WeightTrends({ profile, logs }) {
     ];
 
     // Extra analysis only on Weight trends page
+    if (logs.length >= 3) {
+      // Body weight trajectory since first log
+      const wLogs = logs.filter(l => l.weight_kg);
+      if (wLogs.length >= 3) {
+        const wStart = wLogs[0].weight_kg;
+        const wNow = wLogs[wLogs.length-1].weight_kg;
+        const wDiff = wNow - wStart;
+        if (Math.abs(wDiff) >= 0.15) {
+          list.push({
+            headline: wDiff < 0
+              ? `Weight down ${fmt1(toDisplayWeight(Math.abs(wDiff), unit))} ${weightUnit(unit)} since first log`
+              : `Weight up ${fmt1(toDisplayWeight(wDiff, unit))} ${weightUnit(unit)} since first log`,
+            detail: wDiff < 0
+              ? `Scale is moving. Some of this is water (especially in first 2 weeks). Keep watching the 7-day average.`
+              : `Could be water (luteal, sodium, glycogen) or genuine gain. Check the body-fat trend below to know.`,
+            tone: wDiff < 0 ? 'good' : 'neutral',
+          });
+        } else {
+          list.push({
+            headline: `Weight stable since first log`,
+            detail: `Within ±${fmt1(toDisplayWeight(0.15, unit))} ${weightUnit(unit)}. Could mean stable, could mean too early to tell. Need 2+ weeks for a real signal.`,
+            tone: 'neutral',
+          });
+        }
+      }
+    }
+
     if (logs.length >= 7) {
       // 7-day vs prior 7-day weight trend
       const last7 = logs.slice(-7).filter(l => l.weight_kg);
