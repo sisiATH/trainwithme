@@ -3673,7 +3673,7 @@ function BodyScansSection({ scans, unit, onChange }) {
           <div key={scan.id} className="card" style={{ marginBottom: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
               <div>
-                <div style={{ fontSize: 15, fontWeight: 700 }}>{scan.scan_type || 'Scan'} · {scan.scan_date}</div>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>Body scan · {scan.scan_date}</div>
               </div>
               <button onClick={async () => { if (confirm('Delete this scan?')) { await db.from('body_scans').delete().eq('id', scan.id); onChange(); } }} style={{ background: 'transparent', border: 'none', color: 'var(--text-faint)', fontSize: 12, cursor: 'pointer' }}>Delete</button>
             </div>
@@ -3684,8 +3684,8 @@ function BodyScansSection({ scans, unit, onChange }) {
               <ScanMetric label="Fat mass" value={scan.fat_mass_kg} prev={prev?.fat_mass_kg} unit={weightUnit(unit)} convert={(v) => toDisplayWeight(v, unit)} lowerBetter />
               <ScanMetric label="Visceral fat" value={scan.visceral_fat} prev={prev?.visceral_fat} lowerBetter />
               <ScanMetric label="Bone density" value={scan.bone_density} prev={prev?.bone_density} higherBetter />
-              <ScanMetric label="Android fat %" value={scan.android_fat_pct} prev={prev?.android_fat_pct} unit="%" lowerBetter />
-              <ScanMetric label="Gynoid fat %" value={scan.gynoid_fat_pct} prev={prev?.gynoid_fat_pct} unit="%" />
+              <ScanMetric label="Muscle mass" value={scan.muscle_mass_kg} prev={prev?.muscle_mass_kg} unit={weightUnit(unit)} convert={(v) => toDisplayWeight(v, unit)} higherBetter />
+              <ScanMetric label="Body water %" value={scan.body_water_pct} prev={prev?.body_water_pct} unit="%" />
             </div>
             {scan.notes && <p style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 12, lineHeight: 1.5, fontStyle: 'italic' }}>{scan.notes}</p>}
           </div>
