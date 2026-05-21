@@ -3720,9 +3720,10 @@ function ScanMetric({ label, value, prev, unit = '', convert, higherBetter, lowe
 
 function BodyScanForm({ unit, onSave, onCancel }) {
   const [date, setDate] = useState(ymd(today()));
-  const [type, setType] = useState('DEXA');
   const [w, setW] = useState('');
   const [bf, setBf] = useState('');
+  const [muscleMass, setMuscleMass] = useState('');
+  const [bodyWaterPct, setBodyWaterPct] = useState('');
   const [lean, setLean] = useState('');
   const [fat, setFat] = useState('');
   const [visc, setVisc] = useState('');
@@ -3737,9 +3738,10 @@ function BodyScanForm({ unit, onSave, onCancel }) {
     await db.from('body_scans').insert({
       user_id: user.id,
       scan_date: date,
-      scan_type: type,
       weight_kg: w ? fromDisplayWeight(Number(w), unit) : null,
       body_fat_pct: bf ? Number(bf) : null,
+      muscle_mass_kg: muscleMass ? fromDisplayWeight(Number(muscleMass), unit) : null,
+      body_water_pct: bodyWaterPct ? Number(bodyWaterPct) : null,
       lean_mass_kg: lean ? fromDisplayWeight(Number(lean), unit) : null,
       fat_mass_kg: fat ? fromDisplayWeight(Number(fat), unit) : null,
       visceral_fat: visc ? Number(visc) : null,
@@ -3755,17 +3757,14 @@ function BodyScanForm({ unit, onSave, onCancel }) {
     <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: 16, marginTop: 12 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 12 }}>
         <div><div className="field-label">Date</div><input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} /></div>
-        <div><div className="field-label">Scan type</div>
-          <select className="input" value={type} onChange={(e) => setType(e.target.value)}>
-            <option>DEXA</option><option>InBody</option><option>Hume</option><option>Other</option>
-          </select>
-        </div>
         <div><div className="field-label">Weight ({weightUnit(unit)})</div><input type="number" step="0.1" className="input" value={w} onChange={(e) => setW(e.target.value)} /></div>
         <div><div className="field-label">Body fat %</div><input type="number" step="0.1" className="input" value={bf} onChange={(e) => setBf(e.target.value)} /></div>
+        <div><div className="field-label">Muscle mass ({weightUnit(unit)})</div><input type="number" step="0.1" className="input" value={muscleMass} onChange={(e) => setMuscleMass(e.target.value)} /></div>
+        <div><div className="field-label">Body water %</div><input type="number" step="0.1" className="input" value={bodyWaterPct} onChange={(e) => setBodyWaterPct(e.target.value)} /></div>
         <div><div className="field-label">Lean mass ({weightUnit(unit)})</div><input type="number" step="0.1" className="input" value={lean} onChange={(e) => setLean(e.target.value)} /></div>
         <div><div className="field-label">Fat mass ({weightUnit(unit)})</div><input type="number" step="0.1" className="input" value={fat} onChange={(e) => setFat(e.target.value)} /></div>
         <div><div className="field-label">Visceral fat</div><input type="number" step="0.1" className="input" value={visc} onChange={(e) => setVisc(e.target.value)} /></div>
-        <div><div className="field-label">Bone density</div><input type="number" step="0.01" className="input" value={bone} onChange={(e) => setBone(e.target.value)} /></div>
+        <div><div className="field-label">Bone mass ({weightUnit(unit)})</div><input type="number" step="0.01" className="input" value={bone} onChange={(e) => setBone(e.target.value)} /></div>
         <div><div className="field-label">Android fat %</div><input type="number" step="0.1" className="input" value={android} onChange={(e) => setAndroid(e.target.value)} /></div>
         <div><div className="field-label">Gynoid fat %</div><input type="number" step="0.1" className="input" value={gynoid} onChange={(e) => setGynoid(e.target.value)} /></div>
       </div>
@@ -3777,7 +3776,6 @@ function BodyScanForm({ unit, onSave, onCancel }) {
     </div>
   );
 }
-
 // ---------- Symptoms (peri-specific daily log) ----------
 function SymptomsSection({ symptoms, onChange }) {
   const [adding, setAdding] = useState(false);
