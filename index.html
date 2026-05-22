@@ -1537,10 +1537,13 @@ function AddSessionRow({ onAdd, onCancel }) {
   const [duration, setDuration] = useState('');
   const [rpe, setRpe] = useState('');
   const [calories, setCalories] = useState('');
+  const [distance, setDistance] = useState('');
   const [timeOfDay, setTimeOfDay] = useState('PM');
+  const cardioTypes = ['Walk', 'Run', 'Zone 2', 'Long endurance', 'Swim'];
+  const isCardio = cardioTypes.includes(type);
   return (
     <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: 12, marginTop: 10, border: '1px solid var(--border)' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '70px 1.4fr 80px 80px 90px', gap: 8, marginBottom: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isCardio ? '70px 1.4fr 70px 70px 70px 80px' : '70px 1.4fr 80px 80px 90px', gap: 8, marginBottom: 10 }}>
         <select value={timeOfDay} onChange={(e) => setTimeOfDay(e.target.value)} className="input">
           <option>AM</option><option>Midday</option><option>PM</option>
         </select>
@@ -1552,11 +1555,12 @@ function AddSessionRow({ onAdd, onCancel }) {
         </select>
         <input type="number" placeholder="Min" value={duration} onChange={(e) => setDuration(e.target.value)} className="input" />
         <input type="number" min="1" max="10" placeholder="RPE" value={rpe} onChange={(e) => setRpe(e.target.value)} className="input" />
+        {isCardio && <input type="number" step="0.1" placeholder="km" value={distance} onChange={(e) => setDistance(e.target.value)} className="input" title="Distance (cardio only)" />}
         <input type="number" placeholder="kcal" value={calories} onChange={(e) => setCalories(e.target.value)} className="input" title="Calories burned (from watch)" />
       </div>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
         <button onClick={onCancel} className="btn-ghost" style={{ padding: '8px 16px', fontSize: 12 }}>Cancel</button>
-        <button onClick={() => duration && onAdd({ type, duration: Number(duration), rpe: Number(rpe) || null, calories: Number(calories) || null, timeOfDay })} className="btn" style={{ padding: '8px 16px', fontSize: 12 }}>Add</button>
+        <button onClick={() => duration && onAdd({ type, duration: Number(duration), rpe: Number(rpe) || null, calories: Number(calories) || null, distance_km: distance ? Number(distance) : null, timeOfDay })} className="btn" style={{ padding: '8px 16px', fontSize: 12 }}>Add</button>
       </div>
     </div>
   );
@@ -2364,6 +2368,9 @@ function DailyLog({ profile, logs, todayLog, onLogSaved }) {
   const [fat, setFat] = useState('');
   const [fibre, setFibre] = useState('');
   const [water, setWater] = useState('');
+  const [mealCount, setMealCount] = useState('');
+  const [firstMealTime, setFirstMealTime] = useState('');
+  const [lastMealTime, setLastMealTime] = useState('');
   const [mood, setMood] = useState('');
   const [stress, setStress] = useState('');
   const [caffeine, setCaffeine] = useState('');
@@ -2398,6 +2405,7 @@ function DailyLog({ profile, logs, todayLog, onLogSaved }) {
       setHrv(''); setRhr(''); setSleep(''); setSleepQuality('');
       setSteps(''); setCaloriesIn(''); setCaloriesOut(''); setProtein('');
       setCarbs(''); setFat(''); setFibre(''); setWater('');
+      setMealCount(''); setFirstMealTime(''); setLastMealTime('');
       setMood(''); setStress(''); setCaffeine(''); setAlcohol('');
       setSessions([]); setPeriodToday(false); setNotes('');
       setSavedAt(null);
@@ -2419,6 +2427,9 @@ function DailyLog({ profile, logs, todayLog, onLogSaved }) {
     setFat(src.fat_g || '');
     setFibre(src.fibre_g || '');
     setWater(src.water_l ? fmt1(toDisplayWater(src.water_l, unit)) : '');
+    setMealCount(src.meal_count || '');
+    setFirstMealTime(src.first_meal_time || '');
+    setLastMealTime(src.last_meal_time || '');
     setMood(src.mood || '');
     setStress(src.stress || '');
     setCaffeine(src.caffeine_mg ? (src.caffeine_mg / 95).toFixed(1) : '');
@@ -2449,6 +2460,9 @@ function DailyLog({ profile, logs, todayLog, onLogSaved }) {
       fat_g: fat ? Number(fat) : null,
       fibre_g: fibre ? Number(fibre) : null,
       water_l: fromDisplayWater(water, unit),
+      meal_count: mealCount ? Number(mealCount) : null,
+      first_meal_time: firstMealTime || null,
+      last_meal_time: lastMealTime || null,
       mood: mood ? Number(mood) : null,
       stress: stress ? Number(stress) : null,
       caffeine_mg: caffeine ? Math.round(Number(caffeine) * 95) : null,
@@ -2593,6 +2607,16 @@ function DailyLog({ profile, logs, todayLog, onLogSaved }) {
       </div>
 
       <div className="card" style={{ marginBottom: 14 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, color: 'var(--teal)' }}>Meal pattern</h3>
+        <p style={{ fontSize: 12, color: 'var(--text-mute)', marginBottom: 14 }}>Helps the engine learn whether eating frequency or window timing affects your body.</p>
+        <div className="row row-4">
+          <div><div className="field-label">How many meals?</div><input type="number" min="1" max="10" className="input" value={mealCount} onChange={(e) => setMealCount(e.target.value)} placeholder="incl. snacks" /></div>
+          <div><div className="field-label">First meal time</div><input type="time" className="input" value={firstMealTime} onChange={(e) => setFirstMealTime(e.target.value)} /></div>
+          <div><div className="field-label">Last meal time</div><input type="time" className="input" value={lastMealTime} onChange={(e) => setLastMealTime(e.target.value)} /></div>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
         <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, color: 'var(--teal)' }}>Lifestyle</h3>
         <div className="row row-4">
           <div><div className="field-label">Caffeine (cups)</div><input type="number" step="0.5" className="input" value={caffeine} onChange={(e) => setCaffeine(e.target.value)} placeholder="2 = 2 cups coffee" /></div>
@@ -2606,11 +2630,12 @@ function DailyLog({ profile, logs, todayLog, onLogSaved }) {
           <button onClick={() => setShowAddSession(!showAddSession)} className="btn-ghost" style={{ padding: '6px 14px', fontSize: 12 }}>+ Add session</button>
         </div>
         {sessions.map((s, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '70px 1fr 80px 70px 80px 28px', gap: 10, alignItems: 'center', padding: '10px 0', borderBottom: i < sessions.length - 1 ? '1px dashed var(--divider)' : 'none' }}>
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '70px 1fr 70px 60px 70px 70px 28px', gap: 10, alignItems: 'center', padding: '10px 0', borderBottom: i < sessions.length - 1 ? '1px dashed var(--divider)' : 'none' }}>
             <span style={{ fontSize: 11, color: 'var(--text-mute)', letterSpacing: 1, textTransform: 'uppercase' }}>{s.timeOfDay}</span>
             <span style={{ fontSize: 14, color: 'var(--text)', fontWeight: 500 }}>{s.type}</span>
             <span style={{ fontSize: 13, color: 'var(--text-mute)' }}>{s.duration} min</span>
             <span style={{ fontSize: 13, color: 'var(--text-mute)' }}>{s.rpe ? `RPE ${s.rpe}` : ''}</span>
+            <span style={{ fontSize: 13, color: 'var(--text-mute)' }}>{s.distance_km ? `${s.distance_km} km` : ''}</span>
             <span style={{ fontSize: 13, color: 'var(--text-mute)' }}>{s.calories ? `${s.calories} kcal` : ''}</span>
             <button onClick={() => setSessions(sessions.filter((_, j) => j !== i))} style={{ background: 'transparent', border: 'none', color: 'var(--text-mute)', fontSize: 18 }}>×</button>
           </div>
