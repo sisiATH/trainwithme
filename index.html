@@ -983,6 +983,285 @@ function whatMovesYourScale(logs, profile) {
 }
 
 // ============================================================
+// NARRATOR — daily plain-English story about what the data shows
+// Honest about what it can and can't conclude. Updates as data grows.
+// Returns four sections: today, best vs worst, open hypotheses, honest limits
+// ============================================================
+function narrator(logs, profile, todayLog) {
+  const unit = profile.unit_system || 'kg';
+  const sorted = logs.slice().sort((a, b) => a.date.localeCompare(b.date));
+  const out = {
+    today: null,        // observation about today's numbers
+    bestVsWorst: null,  // what differs between best and worst weight-loss days
+    watching: [],       // open hypotheses the engine is testing
+    cantSay: [],        // things data isn't showing yet
+    daysLogged: sorted.length,
+  };
+
+  // ============ 1. TODAY VS YESTERDAY OBSERVATION ============
+  if (sorted.length >= 2) {
+    const todayDate = ymd(today());
+    const todayRow = todayLog || sorted.find(l => l.date === todayDate);
+    // Find the most recent prior day with weight
+    const priorDays = sorted.filter(l => l.date !== todayDate && l.weight_kg).slice(-3);
+    const yesterday = priorDays.length ? priorDays[priorDays.length - 1] : null;
+
+    if (todayRow && todayRow.weight_kg && yesterday && yesterday.weight_kg) {
+      const diff = todayRow.weight_kg - yesterday.weight_kg;
+      const direction = diff < -0.1 ? 'down' : diff > 0.1 ? 'up' : 'flat';
+      const absDiff = Math.abs(diff);
+      const candidates = [];
+      // Compare yesterday vs the 3-7 day average to find what was different about it
+      const recent = sorted.filter(l => l.date !== yesterday.date && l.date !== todayRow.date).slice(-7);
+      const avgSleep = avg(recent, 'sleep_hours');
+      const avgSteps = avg(recent, 'steps');
+      const avgCalOut = avg(recent, 'calories_out');
+      const avgCalIn = avg(recent, 'calories_in');
+      // Yesterday's variables — what stood out
+      if (yesterday.sleep_hours && avgSleep) {
+        const d = yesterday.sleep_hours - avgSleep;
+        if (Math.abs(d) >= 0.5) candidates.push(`sleep ${d > 0 ? 'high' : 'low'} (${fmt1(yesterday.sleep_hours)}h vs avg ${fmt1(avgSleep)}h)`);
+      }
+      if (yesterday.steps && avgSteps) {
+        const d = yesterday.steps - avgSteps;
+        if (Math.abs(d) >= 1500) candidates.push(`steps ${d > 0 ? 'higher' : 'lower'} (${fmt0(yesterday.steps)} vs avg ${fmt0(avgSteps)})`);
+      }
+      if (yesterday.calories_out && avgCalOut) {
+        const d = yesterday.calories_out - avgCalOut;
+        if (Math.abs(d) >= 200) candidates.push(`calorie burn ${d > 0 ? 'higher' : 'lower'} (${fmt0(yesterday.calories_out)} vs avg ${fmt0(avgCalOut)})`);
+      }
+      if (yesterday.calories_in && avgCalIn) {
+        const d = yesterday.calories_in - avgCalIn;
+        if (Math.abs(d) >= 200) candidates.push(`intake ${d > 0 ? 'higher' : 'lower'} (${fmt0(yesterday.calories_in)} vs avg ${fmt0(avgCalIn)})`);
+      }
+      if (yesterday.alcohol_units > 0) candidates.push(`alcohol (${yesterday.alcohol_units} units)`);
+      if (yesterday.last_meal_time && yesterday.last_meal_time > '21:30') candidates.push(`late last meal (${yesterday.last_meal_time})`);
+      if (yesterday.sessions && yesterday.sessions.length) {
+        const types = yesterday.sessions.map(s => s.type).join(', ');
+        const totalDuration = yesterday.sessions.reduce((sum, s) => sum + (s.duration || 0), 0);
+        if (totalDuration >= 60) candidates.push(`big training day (${types}, ${totalDuration} min)`);
+      }
+
+      let headline, detail;
+      if (direction === 'down') {
+        headline = `Down ${fmt1(toDisplayWeight(absDiff, unit))} ${weightUnit(unit)} this morning`;
+        detail = candidates.length
+          ? `Yesterday stood out: ${candidates.slice(0, 3).join(', ')}. Engine is watching which of these repeats as a pattern.`
+          : `Yesterday looked typical for you — could just be daily water variation. Worth watching the 7-day average.`;
+      } else if (direction === 'up') {
+        headline = `Up ${fmt1(toDisplayWeight(absDiff, unit))} ${weightUnit(unit)} this morning`;
+        if (absDiff > 0.5) {
+          detail = candidates.length
+            ? `Yesterday: ${candidates.slice(0, 3).join(', ')}. Likely water from one of these — not fat regain. Watch tomorrow.`
+            : `Could be hormonal water (luteal, sodium, late meal). Single-day swings >0.5kg are almost always water.`;
+        } else {
+          detail = candidates.length
+            ? `Small change. Yesterday: ${candidates.slice(0, 2).join(', ')}. Normal daily fluctuation.`
+            : `Within normal daily variation. The scale lies on single days — trust the weekly average.`;
+        }
+      } else {
+        headline = `Weight flat this morning`;
+        detail = candidates.length
+          ? `Yesterday: ${candidates.slice(0, 2).join(', ')}. Held steady — neutral signal.`
+          : `Typical day, typical morning. Look at the weekly trend to know if anything's actually moving.`;
+      }
+      out.today = { headline, detail };
+    } else if (sorted.length >= 1 && !todayRow) {
+      out.today = {
+        headline: `Today's weight not logged yet`,
+        detail: `Log this morning's weight to get today's observation.`,
+      };
+    }
+  }
+
+  // ============ 2. BEST VS WORST WEIGHT-LOSS DAYS ============
+  // For each consecutive day pair, compute next-day weight delta. Rank them.
+  const pairs = [];
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const a = sorted[i], b = sorted[i+1];
+    if (a.weight_kg && b.weight_kg && !a.is_refeed) {
+      pairs.push({ day: a, delta: b.weight_kg - a.weight_kg });
+    }
+  }
+  if (pairs.length >= 4) {
+    const sortedPairs = [...pairs].sort((a, b) => a.delta - b.delta);
+    const best = sortedPairs.slice(0, Math.max(2, Math.floor(pairs.length / 3)));
+    const worst = sortedPairs.slice(-Math.max(2, Math.floor(pairs.length / 3)));
+
+    // Compute averages of each group for several variables
+    const groupAvg = (group, key) => {
+      const vals = group.map(p => p.day[key]).filter(v => v !== null && v !== undefined);
+      return vals.length ? vals.reduce((s,v) => s+v, 0) / vals.length : null;
+    };
+    const groupRate = (group, predicate) => {
+      const count = group.filter(p => predicate(p.day)).length;
+      return group.length ? count / group.length : null;
+    };
+
+    const diffs = [];
+    // Sleep
+    const bs = groupAvg(best, 'sleep_hours'), ws = groupAvg(worst, 'sleep_hours');
+    if (bs !== null && ws !== null && Math.abs(bs - ws) >= 0.3) {
+      diffs.push(`sleep: best days ${fmt1(bs)}h vs worst ${fmt1(ws)}h`);
+    }
+    // Steps
+    const bst = groupAvg(best, 'steps'), wst = groupAvg(worst, 'steps');
+    if (bst !== null && wst !== null && Math.abs(bst - wst) >= 1000) {
+      diffs.push(`steps: best days ${fmt0(bst)} vs worst ${fmt0(wst)}`);
+    }
+    // Calories out
+    const bco = groupAvg(best, 'calories_out'), wco = groupAvg(worst, 'calories_out');
+    if (bco !== null && wco !== null && Math.abs(bco - wco) >= 150) {
+      diffs.push(`calorie burn: best days ${fmt0(bco)} vs worst ${fmt0(wco)}`);
+    }
+    // Protein
+    const bp = groupAvg(best, 'protein_g'), wp = groupAvg(worst, 'protein_g');
+    if (bp !== null && wp !== null && Math.abs(bp - wp) >= 10) {
+      diffs.push(`protein: best days ${fmt0(bp)}g vs worst ${fmt0(wp)}g`);
+    }
+    // Alcohol rate
+    const ba = groupRate(best, l => l.alcohol_units > 0);
+    const wa = groupRate(worst, l => l.alcohol_units > 0);
+    if (ba !== null && wa !== null && Math.abs(ba - wa) >= 0.3) {
+      diffs.push(`alcohol: best days ${Math.round(ba*100)}% had drinks vs worst ${Math.round(wa*100)}%`);
+    }
+    // Training presence
+    const bt = groupRate(best, l => (l.sessions || []).length > 0);
+    const wt = groupRate(worst, l => (l.sessions || []).length > 0);
+    if (bt !== null && wt !== null && Math.abs(bt - wt) >= 0.3) {
+      diffs.push(`training: best days ${Math.round(bt*100)}% had a session vs worst ${Math.round(wt*100)}%`);
+    }
+    // Late meal pattern
+    const bl = groupRate(best, l => l.last_meal_time && l.last_meal_time > '21:00');
+    const wl = groupRate(worst, l => l.last_meal_time && l.last_meal_time > '21:00');
+    if (bl !== null && wl !== null && Math.abs(bl - wl) >= 0.3) {
+      diffs.push(`late eating: best days ${Math.round(bl*100)}% ate after 9pm vs worst ${Math.round(wl*100)}%`);
+    }
+
+    if (diffs.length > 0) {
+      out.bestVsWorst = {
+        headline: `Your ${best.length} best vs ${worst.length} worst weight-movement days`,
+        detail: `What separates them: ${diffs.join('; ')}.`,
+        caveat: pairs.length < 14
+          ? `Based on ${pairs.length} day-pairs — observation, not conclusion. Watch over the next 2 weeks.`
+          : `${pairs.length} day-pairs of data — pattern is real, not random.`,
+      };
+    } else if (pairs.length >= 4) {
+      out.bestVsWorst = {
+        headline: `Best vs worst days look similar so far`,
+        detail: `Your habits have been consistent — not enough variation yet to see what's making the difference. Try varying one thing this week.`,
+        caveat: null,
+      };
+    }
+  }
+
+  // ============ 3. OPEN HYPOTHESES (things being watched) ============
+  const watching = [];
+
+  // Day-of-week patterns (your "Tuesday after football" thing)
+  const byDow = {};
+  for (const p of pairs) {
+    const dow = parseYMD(p.day.date).toLocaleDateString('en-GB', { weekday: 'short' });
+    if (!byDow[dow]) byDow[dow] = [];
+    byDow[dow].push(p.delta);
+  }
+  for (const [dow, deltas] of Object.entries(byDow)) {
+    if (deltas.length >= 2) {
+      const avgD = deltas.reduce((s,d) => s+d, 0) / deltas.length;
+      if (avgD < -0.1) {
+        watching.push({
+          observation: `${dow} mornings: weight dropped ${deltas.filter(d => d < 0).length} of ${deltas.length} times`,
+          needs: `${5 - deltas.length} more ${dow} data points to confirm`,
+        });
+      }
+    }
+  }
+
+  // Football / specific session type pattern
+  const footballPairs = pairs.filter(p => (p.day.sessions || []).some(s => s.type === 'Football'));
+  if (footballPairs.length >= 2) {
+    const wins = footballPairs.filter(p => p.delta < -0.05).length;
+    watching.push({
+      observation: `Days you played football: lost weight next morning ${wins} of ${footballPairs.length} times`,
+      needs: footballPairs.length < 4
+        ? `${4 - footballPairs.length} more football days to know if it's reliable`
+        : `engine is checking if it's the football, the eating before, or the high calorie burn`,
+    });
+  }
+
+  // Ate-before-training pattern (when last_meal_time exists and there was a session)
+  const ateBeforeTrainingPairs = pairs.filter(p => {
+    if (!p.day.last_meal_time || !p.day.sessions || p.day.sessions.length === 0) return false;
+    // Rough check: PM session + last meal time before evening
+    return p.day.sessions.some(s => s.timeOfDay === 'PM') && p.day.last_meal_time < '20:00';
+  });
+  if (ateBeforeTrainingPairs.length >= 2) {
+    const wins = ateBeforeTrainingPairs.filter(p => p.delta < -0.05).length;
+    if (wins >= ateBeforeTrainingPairs.length / 2) {
+      watching.push({
+        observation: `Eating before evening training: weight dropped ${wins} of ${ateBeforeTrainingPairs.length} times`,
+        needs: ateBeforeTrainingPairs.length < 4 ? `${4 - ateBeforeTrainingPairs.length} more such days to confirm` : `pattern looks real — watching for confirmation`,
+      });
+    }
+  }
+
+  // Late eating impact
+  const lateMealPairs = pairs.filter(p => p.day.last_meal_time && p.day.last_meal_time > '22:00');
+  if (lateMealPairs.length >= 2) {
+    const gainCount = lateMealPairs.filter(p => p.delta > 0.05).length;
+    if (gainCount >= lateMealPairs.length / 2) {
+      watching.push({
+        observation: `Eating after 10pm: weight up next morning ${gainCount} of ${lateMealPairs.length} times`,
+        needs: lateMealPairs.length < 4 ? `${4 - lateMealPairs.length} more late-eating days to confirm` : `pattern is consistent`,
+      });
+    }
+  }
+
+  out.watching = watching.slice(0, 4);
+
+  // ============ 4. HONEST LIMITS ============
+  const limits = [];
+  // Sleep effect
+  const sleepPairs = pairs.filter(p => p.day.sleep_hours);
+  if (sleepPairs.length >= 4) {
+    const highSleep = sleepPairs.filter(p => p.day.sleep_hours >= 7.5);
+    const lowSleep = sleepPairs.filter(p => p.day.sleep_hours < 7);
+    if (highSleep.length >= 2 && lowSleep.length >= 2) {
+      const hAvg = highSleep.reduce((s,p) => s+p.delta, 0) / highSleep.length;
+      const lAvg = lowSleep.reduce((s,p) => s+p.delta, 0) / lowSleep.length;
+      if (Math.abs(hAvg - lAvg) < 0.1) {
+        limits.push(`Sleep ≥7.5h vs <7h: no clear effect on YOUR scale yet (might need cycle context, or sleep matters less for you than for most)`);
+      }
+    } else {
+      limits.push(`Sleep effect: need more variation (you've been consistent on sleep)`);
+    }
+  } else if (sorted.length >= 5) {
+    limits.push(`Sleep effect: not enough sleep+weight data points yet`);
+  }
+
+  // Cycle phase effect — need at least one full cycle
+  if (profile.track_cycle && sorted.length < 28) {
+    limits.push(`Cycle phase × deficit interaction: need a full cycle (28+ days) to compare follicular vs luteal`);
+  }
+
+  // Body fat / muscle effect
+  const bfPairs = pairs.filter(p => p.day.body_fat_pct);
+  if (bfPairs.length < 7) {
+    limits.push(`Body fat trend: ${bfPairs.length} days logged — needs 14+ for fat-vs-water disambiguation`);
+  }
+
+  // Adherence patterns
+  const adherenceDays = sorted.filter(l => l.adherence_category).length;
+  if (adherenceDays < 14) {
+    limits.push(`Fall-off patterns: need more days logged across on-plan, partial, and refeed types`);
+  }
+
+  out.cantSay = limits.slice(0, 4);
+
+  return out;
+}
+
+// ============================================================
 // DIAGNOSE — real analysis of a day or week's data
 // Returns plain-English diagnostic messages explaining what's working and what isn't
 // Used by dashboard's "Today's prompt" and the Review tab
@@ -1941,102 +2220,99 @@ function Dashboard({ profile, logs, todayLog, setView }) {
   const changes = whatChanged(logs, profile, todayLog);
   const diagnosis = useMemo(() => diagnoseDay(todayLog, profile, logs), [todayLog, profile, logs]);
   const movers = useMemo(() => whatMovesYourScale(logs, profile), [logs, profile]);
+  const story = useMemo(() => narrator(logs, profile, todayLog), [logs, profile, todayLog]);
 
   return (
     <div className="fade-in">
       <h1 className="page-title">Dashboard</h1>
       <p className="page-sub">What moves your scale — based on your data.</p>
 
-      {/* HERO: What moves your scale */}
+      {/* HERO: Narrator — daily story about your data */}
       <div className="card-gradient" style={{ marginBottom: 18 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-          <span className="pill pill-pink">What moves your scale</span>
-          <span style={{ fontSize: 11, color: 'var(--text-mute)' }}>{movers.daysLogged} days logged</span>
+          <span className="pill pill-pink">Today's read on your data</span>
+          <span style={{ fontSize: 11, color: 'var(--text-mute)' }}>{story.daysLogged} days logged</span>
         </div>
 
-        {!movers.ready && (
-          <>
-            <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 14, color: 'var(--text)', lineHeight: 1.25 }}>
-              Day {movers.daysLogged} of logging — patterns coming.
+        {/* TODAY observation */}
+        {story.today && (
+          <div style={{ marginBottom: 18 }}>
+            <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8, color: 'var(--text)', lineHeight: 1.25 }}>
+              {story.today.headline}
             </h2>
-            <p style={{ fontSize: 14, color: 'var(--text-mute)', lineHeight: 1.6, marginBottom: 16 }}>
-              No app can tell you what moves your scale in week 1 — including this one. The honest answer is: not enough data yet. Here's what unlocks as you keep logging:
+            <p style={{ fontSize: 14, color: 'var(--text-mute)', lineHeight: 1.6 }}>
+              {story.today.detail}
             </p>
+          </div>
+        )}
+
+        {!story.today && story.daysLogged < 2 && (
+          <div style={{ marginBottom: 18 }}>
+            <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8, color: 'var(--text)', lineHeight: 1.25 }}>
+              Day {story.daysLogged} of logging
+            </h2>
+            <p style={{ fontSize: 14, color: 'var(--text-mute)', lineHeight: 1.6 }}>
+              Once you log tomorrow morning's weight, I'll start telling you what I'm seeing.
+            </p>
+          </div>
+        )}
+
+        {/* BEST VS WORST */}
+        {story.bestVsWorst && (
+          <div style={{ marginBottom: 18, paddingTop: 16, borderTop: '1px solid rgba(0,0,0,0.08)' }}>
+            <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--teal)', fontWeight: 700, marginBottom: 8 }}>
+              What I'm seeing across your days
+            </div>
+            <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>
+              {story.bestVsWorst.headline}
+            </h3>
+            <p style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.6, marginBottom: story.bestVsWorst.caveat ? 6 : 0 }}>
+              {story.bestVsWorst.detail}
+            </p>
+            {story.bestVsWorst.caveat && (
+              <p style={{ fontSize: 11, color: 'var(--text-faint)', fontStyle: 'italic', lineHeight: 1.5 }}>
+                {story.bestVsWorst.caveat}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* WATCHING - open hypotheses */}
+        {story.watching.length > 0 && (
+          <div style={{ marginBottom: 18, paddingTop: 16, borderTop: '1px solid rgba(0,0,0,0.08)' }}>
+            <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--teal)', fontWeight: 700, marginBottom: 10 }}>
+              What I'm watching
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {[
-                { day: 5, label: 'Day 5', what: 'First patterns appear — which habits correlate with weight movement', done: movers.daysLogged >= 5 },
-                { day: 7, label: 'Day 7', what: 'Behaviour scorecard becomes reliable — your top 2-3 levers ranked', done: movers.daysLogged >= 7 },
-                { day: 14, label: 'Day 14', what: 'Strong signals — cycle phase patterns, weekly trends, full diagnosis', done: movers.daysLogged >= 14 },
-                { day: 21, label: 'Day 21', what: 'AM vs PM training, NEAT vs exercise comparison — your personal experiments', done: movers.daysLogged >= 21 },
-                { day: 28, label: 'Day 28', what: 'Body composition story — fat vs muscle vs water clearly separated', done: movers.daysLogged >= 28 },
-              ].map((m, i) => (
-                <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', opacity: m.done ? 1 : 0.6 }}>
-                  <div style={{
-                    minWidth: 26, height: 26, borderRadius: 13, fontSize: 11, fontWeight: 700,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: m.done ? 'var(--success)' : 'var(--border)',
-                    color: m.done ? 'white' : 'var(--text-mute)',
-                  }}>{m.done ? '✓' : m.day}</div>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{m.label} {m.done && <span style={{ color: 'var(--success)', fontWeight: 500 }}>· unlocked</span>}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 2, lineHeight: 1.5 }}>{m.what}</div>
-                  </div>
+              {story.watching.map((w, i) => (
+                <div key={i}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>● {w.observation}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 2, marginLeft: 12, lineHeight: 1.5 }}>{w.needs}</div>
                 </div>
               ))}
             </div>
-            <p style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 14, lineHeight: 1.5, fontStyle: 'italic' }}>
-              In the meantime, use the Logbook (under Daily log → Logbook) to see your own day-by-day patterns.
-            </p>
-          </>
+          </div>
         )}
 
-        {movers.ready && movers.findings.length === 0 && (
-          <>
-            <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 10, color: 'var(--text)' }}>
-              Not enough variation yet
-            </h2>
-            <p style={{ fontSize: 14, color: 'var(--text-mute)', lineHeight: 1.6 }}>
-              Your habits have been too consistent to tell which one is moving the scale. As your numbers vary day-to-day naturally, patterns will surface.
-            </p>
-          </>
-        )}
-
-        {movers.ready && movers.findings.length > 0 && (
-          <>
-            <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 14, color: 'var(--text)', lineHeight: 1.25 }}>
-              Top {Math.min(movers.findings.length, 4)} thing{movers.findings.length === 1 ? '' : 's'} moving your scale right now:
-            </h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {movers.findings.slice(0, 4).map((f, i) => {
-                const confColor = f.confidence === 'strong' ? 'var(--success)' : f.confidence === 'building' ? 'var(--warn)' : 'var(--text-faint)';
-                const confLabel = f.confidence === 'strong' ? 'Strong signal' : f.confidence === 'building' ? 'Building signal' : 'Early signal';
-                return (
-                  <div key={i} style={{ background: 'rgba(255,255,255,0.5)', borderRadius: 10, padding: 14 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-mute)', minWidth: 18 }}>#{i+1}</span>
-                        <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>{f.name}</span>
-                      </div>
-                      <span style={{ fontSize: 10, color: confColor, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                        ● {confLabel} · {f.dataPoints} days
-                      </span>
-                    </div>
-                    <p style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.55, marginLeft: 26 }}>{f.detail}</p>
-                  </div>
-                );
-              })}
+        {/* CAN'T SAY YET */}
+        {story.cantSay.length > 0 && (
+          <div style={{ paddingTop: 16, borderTop: '1px solid rgba(0,0,0,0.08)' }}>
+            <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--text-mute)', fontWeight: 700, marginBottom: 10 }}>
+              What I can't tell you yet
             </div>
-            {movers.findings.length > 4 && (
-              <p style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 12, textAlign: 'center' }}>
-                +{movers.findings.length - 4} more pattern{movers.findings.length - 4 === 1 ? '' : 's'} — see Insights for the full ranking
-              </p>
-            )}
-            {movers.findings.some(f => f.confidence === 'early') && (
-              <p style={{ fontSize: 11, color: 'var(--text-mute)', marginTop: 14, fontStyle: 'italic', textAlign: 'center', lineHeight: 1.5 }}>
-                Early signals (under 7 days of data) can flip as more data comes in. Strong signals (14+ days) are more reliable.
-              </p>
-            )}
-          </>
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {story.cantSay.map((c, i) => (
+                <li key={i} style={{ fontSize: 12, color: 'var(--text-mute)', lineHeight: 1.6, marginBottom: 4 }}>{c}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Empty state — no observations at all */}
+        {!story.today && !story.bestVsWorst && story.watching.length === 0 && story.cantSay.length === 0 && (
+          <p style={{ fontSize: 14, color: 'var(--text-mute)', lineHeight: 1.6 }}>
+            Log your first day and I'll start observing.
+          </p>
         )}
       </div>
 
