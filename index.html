@@ -1389,6 +1389,46 @@ function diagnoseRange(logs, profile, label) {
 // ============================================================
 // PROGRESS METRICS — for keeping users motivated through sparse early weeks
 // ============================================================
+// ============================================================
+// ADHERENCE — silent computation per day, used by engine to filter/interpret data
+// Score 0-100 based on % of targets hit. Category for quick filtering.
+// NOT shown to user as a number — only the engine uses it.
+// ============================================================
+function calcAdherence(log, profile) {
+  if (!log) return { score: null, category: null };
+  if (log.is_refeed) return { score: null, category: 'refeed' };
+
+  const checks = [];
+  // Protein
+  if (profile.protein_target && log.protein_g) {
+    checks.push(log.protein_g >= profile.protein_target ? 1 : 0);
+  }
+  // Water
+  if (profile.water_target && log.water_l) {
+    checks.push(log.water_l >= profile.water_target * 0.9 ? 1 : 0);
+  }
+  // Sleep
+  if (profile.sleep_target && log.sleep_hours) {
+    checks.push(log.sleep_hours >= profile.sleep_target * 0.9 ? 1 : 0);
+  }
+  // Steps
+  if (profile.baseline_steps && log.steps) {
+    checks.push(log.steps >= profile.baseline_steps * 0.85 ? 1 : 0);
+  }
+  // Alcohol (low = good, 0-2 units acceptable on a target day)
+  if (log.alcohol_units !== null && log.alcohol_units !== undefined) {
+    checks.push(log.alcohol_units <= 2 ? 1 : 0);
+  }
+
+  if (checks.length === 0) return { score: null, category: null };
+  const score = Math.round((checks.reduce((s, v) => s + v, 0) / checks.length) * 100);
+  let category;
+  if (score >= 80) category = 'on_plan';
+  else if (score >= 50) category = 'partial';
+  else category = 'off_plan';
+  return { score, category };
+}
+
 function progressStatus(logs, profile) {
   const daysLogged = logs.length;
   const out = { daysLogged, streak: 0, nextUnlock: null, tinyWins: [] };
@@ -1533,20 +1573,29 @@ function PillBtn({ active, onClick, children, color = 'teal' }) {
 }
 
 function AddSessionRow({ onAdd, onCancel }) {
+  const TIME_DEFAULTS = { AM: '08:00', Midday: '12:30', PM: '18:30' };
   const [type, setType] = useState('Walk');
   const [duration, setDuration] = useState('');
   const [rpe, setRpe] = useState('');
   const [calories, setCalories] = useState('');
   const [distance, setDistance] = useState('');
   const [timeOfDay, setTimeOfDay] = useState('PM');
+  const [startTime, setStartTime] = useState(TIME_DEFAULTS['PM']);
+  const [userEditedTime, setUserEditedTime] = useState(false);
   const cardioTypes = ['Walk', 'Run', 'Zone 2', 'Long endurance', 'Swim'];
   const isCardio = cardioTypes.includes(type);
+  // When user changes the bucket, auto-update start time (unless they already typed one)
+  const onBucketChange = (val) => {
+    setTimeOfDay(val);
+    if (!userEditedTime) setStartTime(TIME_DEFAULTS[val]);
+  };
   return (
     <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: 12, marginTop: 10, border: '1px solid var(--border)' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: isCardio ? '70px 1.4fr 70px 70px 70px 80px' : '70px 1.4fr 80px 80px 90px', gap: 8, marginBottom: 10 }}>
-        <select value={timeOfDay} onChange={(e) => setTimeOfDay(e.target.value)} className="input">
+      <div style={{ display: 'grid', gridTemplateColumns: isCardio ? '70px 80px 1.4fr 60px 60px 60px 70px' : '70px 80px 1.4fr 70px 70px 80px', gap: 8, marginBottom: 10 }}>
+        <select value={timeOfDay} onChange={(e) => onBucketChange(e.target.value)} className="input">
           <option>AM</option><option>Midday</option><option>PM</option>
         </select>
+        <input type="time" value={startTime} onChange={(e) => { setStartTime(e.target.value); setUserEditedTime(true); }} className="input" title="Start time (auto-filled, edit if needed)" />
         <select value={type} onChange={(e) => setType(e.target.value)} className="input">
           <option>Strength</option><option>Walk</option><option>Zone 2</option>
           <option>HIIT</option><option>Yoga/mobility</option><option>Swim</option>
@@ -1560,7 +1609,7 @@ function AddSessionRow({ onAdd, onCancel }) {
       </div>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
         <button onClick={onCancel} className="btn-ghost" style={{ padding: '8px 16px', fontSize: 12 }}>Cancel</button>
-        <button onClick={() => duration && onAdd({ type, duration: Number(duration), rpe: Number(rpe) || null, calories: Number(calories) || null, distance_km: distance ? Number(distance) : null, timeOfDay })} className="btn" style={{ padding: '8px 16px', fontSize: 12 }}>Add</button>
+        <button onClick={() => duration && onAdd({ type, duration: Number(duration), rpe: Number(rpe) || null, calories: Number(calories) || null, distance_km: distance ? Number(distance) : null, timeOfDay, start_time: startTime || null })} className="btn" style={{ padding: '8px 16px', fontSize: 12 }}>Add</button>
       </div>
     </div>
   );
@@ -2371,6 +2420,7 @@ function DailyLog({ profile, logs, todayLog, onLogSaved }) {
   const [mealCount, setMealCount] = useState('');
   const [firstMealTime, setFirstMealTime] = useState('');
   const [lastMealTime, setLastMealTime] = useState('');
+  const [isRefeed, setIsRefeed] = useState(false);
   const [mood, setMood] = useState('');
   const [stress, setStress] = useState('');
   const [caffeine, setCaffeine] = useState('');
@@ -2406,6 +2456,7 @@ function DailyLog({ profile, logs, todayLog, onLogSaved }) {
       setSteps(''); setCaloriesIn(''); setCaloriesOut(''); setProtein('');
       setCarbs(''); setFat(''); setFibre(''); setWater('');
       setMealCount(''); setFirstMealTime(''); setLastMealTime('');
+      setIsRefeed(false);
       setMood(''); setStress(''); setCaffeine(''); setAlcohol('');
       setSessions([]); setPeriodToday(false); setNotes('');
       setSavedAt(null);
@@ -2430,6 +2481,7 @@ function DailyLog({ profile, logs, todayLog, onLogSaved }) {
     setMealCount(src.meal_count || '');
     setFirstMealTime(src.first_meal_time || '');
     setLastMealTime(src.last_meal_time || '');
+    setIsRefeed(!!src.is_refeed);
     setMood(src.mood || '');
     setStress(src.stress || '');
     setCaffeine(src.caffeine_mg ? (src.caffeine_mg / 95).toFixed(1) : '');
@@ -2463,12 +2515,17 @@ function DailyLog({ profile, logs, todayLog, onLogSaved }) {
       meal_count: mealCount ? Number(mealCount) : null,
       first_meal_time: firstMealTime || null,
       last_meal_time: lastMealTime || null,
+      is_refeed: isRefeed,
       mood: mood ? Number(mood) : null,
       stress: stress ? Number(stress) : null,
       caffeine_mg: caffeine ? Math.round(Number(caffeine) * 95) : null,
       alcohol_units: alcohol ? Number(alcohol) : null,
       sessions, period_today: periodToday, notes,
     };
+    // Compute adherence silently and store on the row
+    const adh = calcAdherence(row, profile);
+    row.adherence_score = adh.score;
+    row.adherence_category = adh.category;
     const { error } = await db.from('daily_logs').upsert(row, { onConflict: 'user_id,date' });
 
     // First-log: stamp trial_started_at if not set
@@ -2614,6 +2671,17 @@ function DailyLog({ profile, logs, todayLog, onLogSaved }) {
           <div><div className="field-label">First meal time</div><input type="time" className="input" value={firstMealTime} onChange={(e) => setFirstMealTime(e.target.value)} /></div>
           <div><div className="field-label">Last meal time</div><input type="time" className="input" value={lastMealTime} onChange={(e) => setLastMealTime(e.target.value)} /></div>
         </div>
+        <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px dashed var(--divider)' }}>
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+            <input type="checkbox" checked={isRefeed} onChange={(e) => setIsRefeed(e.target.checked)} style={{ width: 18, height: 18, accentColor: 'var(--teal)', marginTop: 2, flexShrink: 0 }} />
+            <div>
+              <span style={{ fontSize: 13, color: 'var(--text)', fontWeight: 600 }}>Mark as a refeed day</span>
+              <p style={{ fontSize: 12, color: 'var(--text-mute)', lineHeight: 1.5, marginTop: 4 }}>
+                A refeed is a deliberately higher-calorie day (usually more carbs) that gives your metabolism a small boost and a mental break. Used strategically every 7-14 days, it can prevent fall-off and sometimes accelerate fat loss in peri. Marking it tells the app this was planned, not a slip — so it won't pull down your patterns.
+              </p>
+            </div>
+          </label>
+        </div>
       </div>
 
       <div className="card" style={{ marginBottom: 14 }}>
@@ -2630,8 +2698,8 @@ function DailyLog({ profile, logs, todayLog, onLogSaved }) {
           <button onClick={() => setShowAddSession(!showAddSession)} className="btn-ghost" style={{ padding: '6px 14px', fontSize: 12 }}>+ Add session</button>
         </div>
         {sessions.map((s, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '70px 1fr 70px 60px 70px 70px 28px', gap: 10, alignItems: 'center', padding: '10px 0', borderBottom: i < sessions.length - 1 ? '1px dashed var(--divider)' : 'none' }}>
-            <span style={{ fontSize: 11, color: 'var(--text-mute)', letterSpacing: 1, textTransform: 'uppercase' }}>{s.timeOfDay}</span>
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 70px 60px 70px 70px 28px', gap: 10, alignItems: 'center', padding: '10px 0', borderBottom: i < sessions.length - 1 ? '1px dashed var(--divider)' : 'none' }}>
+            <span style={{ fontSize: 11, color: 'var(--text-mute)', letterSpacing: 1, textTransform: 'uppercase' }}>{s.timeOfDay}{s.start_time ? ` ${s.start_time}` : ''}</span>
             <span style={{ fontSize: 14, color: 'var(--text)', fontWeight: 500 }}>{s.type}</span>
             <span style={{ fontSize: 13, color: 'var(--text-mute)' }}>{s.duration} min</span>
             <span style={{ fontSize: 13, color: 'var(--text-mute)' }}>{s.rpe ? `RPE ${s.rpe}` : ''}</span>
