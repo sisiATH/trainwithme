@@ -1074,21 +1074,25 @@ function narrator(logs, profile, todayLog) {
     }
   }
 
-  // ============ 2. BEST VS WORST WEIGHT-LOSS DAYS ============
-  // For each consecutive day pair, compute next-day weight delta. Rank them.
+  // ============ 2. WHAT'S DIFFERENT ON DOWN-DAYS VS UP-DAYS ============
+  // Use 3-day FORWARD weight change (smooths next-morning water noise).
+  // Neutral language: "scale moved down" vs "scale moved up" — no judgement.
   const pairs = [];
-  for (let i = 0; i < sorted.length - 1; i++) {
-    const a = sorted[i], b = sorted[i+1];
-    if (a.weight_kg && b.weight_kg && !a.is_refeed) {
-      pairs.push({ day: a, delta: b.weight_kg - a.weight_kg });
-    }
+  for (let i = 0; i < sorted.length - 3; i++) {
+    const a = sorted[i];
+    if (!a.weight_kg || a.is_refeed) continue;
+    // Find 3-day forward average weight (using next 3 days)
+    const next3 = sorted.slice(i+1, i+4).filter(l => l.weight_kg);
+    if (next3.length < 2) continue;
+    const fwdAvg = next3.reduce((s, l) => s + l.weight_kg, 0) / next3.length;
+    pairs.push({ day: a, delta: fwdAvg - a.weight_kg });
   }
   if (pairs.length >= 4) {
     const sortedPairs = [...pairs].sort((a, b) => a.delta - b.delta);
-    const best = sortedPairs.slice(0, Math.max(2, Math.floor(pairs.length / 3)));
-    const worst = sortedPairs.slice(-Math.max(2, Math.floor(pairs.length / 3)));
+    const downSize = Math.max(2, Math.floor(pairs.length / 3));
+    const downDays = sortedPairs.slice(0, downSize);  // scale moved DOWN over next 3 days
+    const upDays = sortedPairs.slice(-downSize);      // scale moved UP
 
-    // Compute averages of each group for several variables
     const groupAvg = (group, key) => {
       const vals = group.map(p => p.day[key]).filter(v => v !== null && v !== undefined);
       return vals.length ? vals.reduce((s,v) => s+v, 0) / vals.length : null;
@@ -1100,56 +1104,56 @@ function narrator(logs, profile, todayLog) {
 
     const diffs = [];
     // Sleep
-    const bs = groupAvg(best, 'sleep_hours'), ws = groupAvg(worst, 'sleep_hours');
-    if (bs !== null && ws !== null && Math.abs(bs - ws) >= 0.3) {
-      diffs.push(`sleep: best days ${fmt1(bs)}h vs worst ${fmt1(ws)}h`);
+    const ds = groupAvg(downDays, 'sleep_hours'), us = groupAvg(upDays, 'sleep_hours');
+    if (ds !== null && us !== null && Math.abs(ds - us) >= 0.3) {
+      diffs.push(`sleep: ${fmt1(ds)}h on down-days vs ${fmt1(us)}h on up-days`);
     }
     // Steps
-    const bst = groupAvg(best, 'steps'), wst = groupAvg(worst, 'steps');
-    if (bst !== null && wst !== null && Math.abs(bst - wst) >= 1000) {
-      diffs.push(`steps: best days ${fmt0(bst)} vs worst ${fmt0(wst)}`);
+    const dst = groupAvg(downDays, 'steps'), ust = groupAvg(upDays, 'steps');
+    if (dst !== null && ust !== null && Math.abs(dst - ust) >= 1000) {
+      diffs.push(`steps: ${fmt0(dst)} on down-days vs ${fmt0(ust)} on up-days`);
     }
     // Calories out
-    const bco = groupAvg(best, 'calories_out'), wco = groupAvg(worst, 'calories_out');
-    if (bco !== null && wco !== null && Math.abs(bco - wco) >= 150) {
-      diffs.push(`calorie burn: best days ${fmt0(bco)} vs worst ${fmt0(wco)}`);
+    const dco = groupAvg(downDays, 'calories_out'), uco = groupAvg(upDays, 'calories_out');
+    if (dco !== null && uco !== null && Math.abs(dco - uco) >= 150) {
+      diffs.push(`calorie burn: ${fmt0(dco)} on down-days vs ${fmt0(uco)} on up-days`);
     }
     // Protein
-    const bp = groupAvg(best, 'protein_g'), wp = groupAvg(worst, 'protein_g');
-    if (bp !== null && wp !== null && Math.abs(bp - wp) >= 10) {
-      diffs.push(`protein: best days ${fmt0(bp)}g vs worst ${fmt0(wp)}g`);
+    const dp = groupAvg(downDays, 'protein_g'), up = groupAvg(upDays, 'protein_g');
+    if (dp !== null && up !== null && Math.abs(dp - up) >= 10) {
+      diffs.push(`protein: ${fmt0(dp)}g on down-days vs ${fmt0(up)}g on up-days`);
     }
     // Alcohol rate
-    const ba = groupRate(best, l => l.alcohol_units > 0);
-    const wa = groupRate(worst, l => l.alcohol_units > 0);
-    if (ba !== null && wa !== null && Math.abs(ba - wa) >= 0.3) {
-      diffs.push(`alcohol: best days ${Math.round(ba*100)}% had drinks vs worst ${Math.round(wa*100)}%`);
+    const da = groupRate(downDays, l => l.alcohol_units > 0);
+    const ua = groupRate(upDays, l => l.alcohol_units > 0);
+    if (da !== null && ua !== null && Math.abs(da - ua) >= 0.3) {
+      diffs.push(`alcohol: ${Math.round(da*100)}% of down-days vs ${Math.round(ua*100)}% of up-days`);
     }
     // Training presence
-    const bt = groupRate(best, l => (l.sessions || []).length > 0);
-    const wt = groupRate(worst, l => (l.sessions || []).length > 0);
-    if (bt !== null && wt !== null && Math.abs(bt - wt) >= 0.3) {
-      diffs.push(`training: best days ${Math.round(bt*100)}% had a session vs worst ${Math.round(wt*100)}%`);
+    const dt = groupRate(downDays, l => (l.sessions || []).length > 0);
+    const ut = groupRate(upDays, l => (l.sessions || []).length > 0);
+    if (dt !== null && ut !== null && Math.abs(dt - ut) >= 0.3) {
+      diffs.push(`training: ${Math.round(dt*100)}% of down-days had a session vs ${Math.round(ut*100)}% of up-days`);
     }
     // Late meal pattern
-    const bl = groupRate(best, l => l.last_meal_time && l.last_meal_time > '21:00');
-    const wl = groupRate(worst, l => l.last_meal_time && l.last_meal_time > '21:00');
-    if (bl !== null && wl !== null && Math.abs(bl - wl) >= 0.3) {
-      diffs.push(`late eating: best days ${Math.round(bl*100)}% ate after 9pm vs worst ${Math.round(wl*100)}%`);
+    const dl = groupRate(downDays, l => l.last_meal_time && l.last_meal_time > '21:00');
+    const ul = groupRate(upDays, l => l.last_meal_time && l.last_meal_time > '21:00');
+    if (dl !== null && ul !== null && Math.abs(dl - ul) >= 0.3) {
+      diffs.push(`late meals: ${Math.round(dl*100)}% of down-days ate after 9pm vs ${Math.round(ul*100)}% of up-days`);
     }
 
     if (diffs.length > 0) {
       out.bestVsWorst = {
-        headline: `Your ${best.length} best vs ${worst.length} worst weight-movement days`,
-        detail: `What separates them: ${diffs.join('; ')}.`,
+        headline: `What's different on days when the scale moves`,
+        detail: `Across your ${pairs.length} logged 3-day windows: ${diffs.join('; ')}.`,
         caveat: pairs.length < 14
-          ? `Based on ${pairs.length} day-pairs — observation, not conclusion. Watch over the next 2 weeks.`
-          : `${pairs.length} day-pairs of data — pattern is real, not random.`,
+          ? `Based on ${pairs.length} windows — this is what I notice so far, not a conclusion. Single big-training days often push the scale up the next morning (water + glycogen) before coming back down later in the week.`
+          : `${pairs.length} 3-day windows of data — pattern is stable.`,
       };
     } else if (pairs.length >= 4) {
       out.bestVsWorst = {
-        headline: `Best vs worst days look similar so far`,
-        detail: `Your habits have been consistent — not enough variation yet to see what's making the difference. Try varying one thing this week.`,
+        headline: `Your days look similar across the board`,
+        detail: `Your habits have been consistent. Without more variation, I can't separate what's moving the scale from what isn't. Vary one thing this week — sleep, steps, or training timing — and I'll learn faster.`,
         caveat: null,
       };
     }
@@ -2257,11 +2261,11 @@ function Dashboard({ profile, logs, todayLog, setView }) {
           </div>
         )}
 
-        {/* BEST VS WORST */}
+        {/* WHAT'S DIFFERENT — down-days vs up-days */}
         {story.bestVsWorst && (
           <div style={{ marginBottom: 18, paddingTop: 16, borderTop: '1px solid rgba(0,0,0,0.08)' }}>
             <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--teal)', fontWeight: 700, marginBottom: 8 }}>
-              What I'm seeing across your days
+              What I notice across your days
             </div>
             <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>
               {story.bestVsWorst.headline}
