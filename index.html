@@ -1142,22 +1142,33 @@ function narrator(logs, profile, todayLog) {
       diffs.push(`late meals: ${Math.round(dl*100)}% of down-days ate after 9pm vs ${Math.round(ul*100)}% of up-days`);
     }
 
-    if (diffs.length > 0) {
-      out.bestVsWorst = {
-        headline: `What's different on days when the scale moves`,
-        detail: `Across your ${pairs.length} logged 3-day windows: ${diffs.join('; ')}.`,
-        caveat: pairs.length < 14
-          ? `Based on ${pairs.length} windows — this is what I notice so far, not a conclusion. Single big-training days often push the scale up the next morning (water + glycogen) before coming back down later in the week.`
-          : `${pairs.length} 3-day windows of data — pattern is stable.`,
-      };
-    } else if (pairs.length >= 4) {
-      out.bestVsWorst = {
-        headline: `Your days look similar across the board`,
-        detail: `Your habits have been consistent. Without more variation, I can't separate what's moving the scale from what isn't. Vary one thing this week — sleep, steps, or training timing — and I'll learn faster.`,
-        caveat: null,
-      };
-    }
+  if (diffs.length > 0) {
+  if (pairs.length >= 20) {
+    out.bestVsWorst = {
+      headline: `What tends to be different when your scale drops`,
+      detail: `Across your ${pairs.length} logged 3-day windows: ${diffs.join('; ')}.`,
+      caveat: `This is becoming a real pattern in your data, but still not a rule — water, cycle phase, food timing, and training load can still override the next-morning scale.`,
+    };
+  } else if (pairs.length >= 10) {
+    out.bestVsWorst = {
+      headline: `Early read: what looks different when the scale moves`,
+      detail: `Across your ${pairs.length} logged 3-day windows so far: ${diffs.join('; ')}.`,
+      caveat: `This is still a noisy early pattern, not a conclusion. Hard training days can push the scale up or down the next morning depending on water, glycogen, soreness, sodium, and cycle phase.`,
+    };
+  } else {
+    out.bestVsWorst = {
+      headline: `Too early to call a real pattern`,
+      detail: `You have ${pairs.length} usable 3-day windows so far. That is enough to watch, but not enough to conclude what reliably makes your scale drop.`,
+      caveat: `For now, treat single-day jumps after football, strength, long walks, or high-step days as likely water/noise unless the trend holds for several days.`,
+    };
   }
+} else if (pairs.length >= 4) {
+  out.bestVsWorst = {
+    headline: `Your days look similar across the board`,
+    detail: `Your habits have been consistent. Without more variation, I can't separate what's moving the scale from what isn't. Vary one thing this week — sleep, steps, or training timing — and I'll learn faster.`,
+    caveat: null,
+  };
+}
 
   // ============ 3. OPEN HYPOTHESES (things being watched) ============
   const watching = [];
