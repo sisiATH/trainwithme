@@ -3416,6 +3416,65 @@ function RecoveryView({ profile, logs }) {
     stalls: insights.stalls.filter(it => it.scope !== 'body'),
     cycle: insights.cycle.filter(it => it.scope !== 'body'),
   };
+    const avgProtein = avg(logs.slice(-14), 'protein_g');
+  const avgCalories = avg(logs.slice(-14), 'calories_in');
+  const avgSleep = avg(logs.slice(-14), 'sleep_hours');
+  const avgSteps = avg(logs.slice(-14), 'steps');
+
+  const proteinTarget = profile.protein_target || (profile.start_weight_kg ? profile.start_weight_kg * 1.6 : null);
+  const sleepTarget = profile.sleep_target || 7.5;
+  const stepsTarget = profile.baseline_steps || 8000;
+  const calorieTarget = profile.calorie_target || null;
+
+  const goalBars = selectedGoal ? {
+    muscle: (
+      <>
+        <GoalProgressBar label="Protein" current={avgProtein} target={proteinTarget} unit="g" higherIsBetter={true} />
+        <GoalProgressBar label="Sleep" current={avgSleep} target={sleepTarget} unit="h" higherIsBetter={true} />
+      </>
+    ),
+    fatloss: (
+      <>
+        <GoalProgressBar label="Protein" current={avgProtein} target={proteinTarget} unit="g" higherIsBetter={true} />
+        {!!calorieTarget && (
+          <GoalProgressBar label="Calories" current={avgCalories} target={calorieTarget} unit="kcal" higherIsBetter={false} />
+        )}
+        <GoalProgressBar label="Steps" current={avgSteps} target={stepsTarget} unit="" higherIsBetter={true} />
+      </>
+    ),
+    stall: (
+      <>
+        <GoalProgressBar label="Protein" current={avgProtein} target={proteinTarget} unit="g" higherIsBetter={true} />
+        <GoalProgressBar label="Sleep" current={avgSleep} target={sleepTarget} unit="h" higherIsBetter={true} />
+        <GoalProgressBar label="Steps" current={avgSteps} target={stepsTarget} unit="" higherIsBetter={true} />
+      </>
+    ),
+    sleep: (
+      <>
+        <GoalProgressBar label="Sleep" current={avgSleep} target={sleepTarget} unit="h" higherIsBetter={true} />
+      </>
+    ),
+    energy: (
+      <>
+        <GoalProgressBar label="Sleep" current={avgSleep} target={sleepTarget} unit="h" higherIsBetter={true} />
+        <GoalProgressBar label="Protein" current={avgProtein} target={proteinTarget} unit="g" higherIsBetter={true} />
+      </>
+    ),
+    luteal: (
+      <>
+        <GoalProgressBar label="Sleep" current={avgSleep} target={sleepTarget} unit="h" higherIsBetter={true} />
+        <GoalProgressBar label="Protein" current={avgProtein} target={proteinTarget} unit="g" higherIsBetter={true} />
+      </>
+    ),
+    hunger: (
+      <>
+        <GoalProgressBar label="Protein" current={avgProtein} target={proteinTarget} unit="g" higherIsBetter={true} />
+        {!!calorieTarget && (
+          <GoalProgressBar label="Calories" current={avgCalories} target={calorieTarget} unit="kcal" higherIsBetter={false} />
+        )}
+      </>
+    ),
+  } : {};
   const totalInsights = general.gaps.length + general.wins.length + general.stalls.length + general.cycle.length;
 
   return (
@@ -4932,15 +4991,37 @@ function GoalProgressBar({ label, current, target, unit = '', higherIsBetter = f
               </p>
             ) : (
               answerGoal(selectedGoal, logs, profile).map((section, i) => (
-                <div key={i} style={{ marginBottom: 22, paddingTop: i === 0 ? 0 : 18, borderTop: i === 0 ? 'none' : '1px solid var(--divider)' }}>
-                  <h3 style={{ fontSize: 13, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--teal)', marginBottom: 10, fontWeight: 600 }}>{section.title}</h3>
-                  <p style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.7, whiteSpace: 'pre-line' }}>{section.body}</p>
-                </div>
-              ))
-            )}
-          </div>
-        </>
-      )}
+  <div
+    key={i}
+    style={{
+      marginBottom: 22,
+      paddingTop: i === 0 ? 0 : 18,
+      borderTop: i === 0 ? 'none' : '1px solid var(--divider)'
+    }}
+  >
+    <h3
+      style={{
+        fontSize: 13,
+        letterSpacing: 1.5,
+        textTransform: 'uppercase',
+        color: 'var(--teal)',
+        marginBottom: 10,
+        fontWeight: 600
+      }}
+    >
+      {section.title}
+    </h3>
+    <p style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.7, whiteSpace: 'pre-line' }}>
+      {section.body}
+    </p>
+
+    {i === 0 && goalBars[selectedGoal] ? (
+      <div style={{ marginTop: 14 }}>
+        {goalBars[selectedGoal]}
+      </div>
+    ) : null}
+  </div>
+))
 
       {/* RETROSPECTIVE MODES (week/month/all) */}
       {mode !== 'goals' && scopedLogs.length === 0 && (
