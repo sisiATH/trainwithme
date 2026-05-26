@@ -3416,65 +3416,6 @@ function RecoveryView({ profile, logs }) {
     stalls: insights.stalls.filter(it => it.scope !== 'body'),
     cycle: insights.cycle.filter(it => it.scope !== 'body'),
   };
-    const avgProtein = avg(logs.slice(-14), 'protein_g');
-  const avgCalories = avg(logs.slice(-14), 'calories_in');
-  const avgSleep = avg(logs.slice(-14), 'sleep_hours');
-  const avgSteps = avg(logs.slice(-14), 'steps');
-
-  const proteinTarget = profile.protein_target || (profile.start_weight_kg ? profile.start_weight_kg * 1.6 : null);
-  const sleepTarget = profile.sleep_target || 7.5;
-  const stepsTarget = profile.baseline_steps || 8000;
-  const calorieTarget = profile.calorie_target || null;
-
-  const goalBars = selectedGoal ? {
-    muscle: (
-      <>
-        <GoalProgressBar label="Protein" current={avgProtein} target={proteinTarget} unit="g" higherIsBetter={true} />
-        <GoalProgressBar label="Sleep" current={avgSleep} target={sleepTarget} unit="h" higherIsBetter={true} />
-      </>
-    ),
-    fatloss: (
-      <>
-        <GoalProgressBar label="Protein" current={avgProtein} target={proteinTarget} unit="g" higherIsBetter={true} />
-        {!!calorieTarget && (
-          <GoalProgressBar label="Calories" current={avgCalories} target={calorieTarget} unit="kcal" higherIsBetter={false} />
-        )}
-        <GoalProgressBar label="Steps" current={avgSteps} target={stepsTarget} unit="" higherIsBetter={true} />
-      </>
-    ),
-    stall: (
-      <>
-        <GoalProgressBar label="Protein" current={avgProtein} target={proteinTarget} unit="g" higherIsBetter={true} />
-        <GoalProgressBar label="Sleep" current={avgSleep} target={sleepTarget} unit="h" higherIsBetter={true} />
-        <GoalProgressBar label="Steps" current={avgSteps} target={stepsTarget} unit="" higherIsBetter={true} />
-      </>
-    ),
-    sleep: (
-      <>
-        <GoalProgressBar label="Sleep" current={avgSleep} target={sleepTarget} unit="h" higherIsBetter={true} />
-      </>
-    ),
-    energy: (
-      <>
-        <GoalProgressBar label="Sleep" current={avgSleep} target={sleepTarget} unit="h" higherIsBetter={true} />
-        <GoalProgressBar label="Protein" current={avgProtein} target={proteinTarget} unit="g" higherIsBetter={true} />
-      </>
-    ),
-    luteal: (
-      <>
-        <GoalProgressBar label="Sleep" current={avgSleep} target={sleepTarget} unit="h" higherIsBetter={true} />
-        <GoalProgressBar label="Protein" current={avgProtein} target={proteinTarget} unit="g" higherIsBetter={true} />
-      </>
-    ),
-    hunger: (
-      <>
-        <GoalProgressBar label="Protein" current={avgProtein} target={proteinTarget} unit="g" higherIsBetter={true} />
-        {!!calorieTarget && (
-          <GoalProgressBar label="Calories" current={avgCalories} target={calorieTarget} unit="kcal" higherIsBetter={false} />
-        )}
-      </>
-    ),
-  } : {};
   const totalInsights = general.gaps.length + general.wins.length + general.stalls.length + general.cycle.length;
 
   return (
@@ -4861,8 +4802,40 @@ function GoalProgressBar({ label, current, target, unit = '', higherIsBetter = f
   );
 }
 // Small helper to show how close you are to a target for the Coach goals
+) {
+  if (current == null || target == null || !isFinite(current) || !isFinite(target)) return null;
 
- function CoachView({ profile, logs }) {
+  const rawPct = target === 0 ? 0 : (current / target) * 100;
+  const pct = Math.max(0, Math.min(130, Math.round(rawPct)));
+  const met = higherIsBetter ? current >= target : current <= target;
+
+  let color = 'var(--teal)';
+  if (met) color = 'var(--success)';
+  if (!higherIsBetter && rawPct > 115) color = 'var(--error)';
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12, marginBottom: 4 }}>
+        <span style={{ color: 'var(--text)' }}>{label}</span>
+        <span style={{ color: met ? 'var(--success)' : 'var(--text-mute)' }}>
+          {fmt1(current)} / {fmt1(target)} {unit} {met ? '✓' : ''}
+        </span>
+      </div>
+      <div style={{ height: 6, borderRadius: 999, background: 'var(--border)', overflow: 'hidden' }}>
+        <div
+          style={{
+            height: '100%',
+            width: `${pct}%`,
+            borderRadius: 999,
+            background: color,
+            transition: 'width 0.35s ease',
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+  function CoachView({ profile, logs }) {
   const unit = profile.unit_system || 'kg';
   const [mode, setMode] = useState('week');
   const [selectedGoal, setSelectedGoal] = useState(null);
@@ -4876,79 +4849,15 @@ function GoalProgressBar({ label, current, target, unit = '', higherIsBetter = f
   }, [logs, mode]);
 
   const label = mode === 'week' ? 'this week' : mode === 'month' ? 'this month' : 'overall';
-  const diagnosis = useMemo(
-    () => (mode === 'goals' ? [] : diagnoseRange(scopedLogs, profile, label)),
-    [scopedLogs, profile, label, mode]
-  );
+  const diagnosis = useMemo(() => mode === 'goals' ? [] : diagnoseRange(scopedLogs, profile, label), [scopedLogs, profile, label, mode]);
   const scorecard = useMemo(() => behaviourScorecard(logs, profile), [logs, profile]);
   const allInsights = useMemo(() => generateInsights(logs, profile), [logs, profile]);
-
   const general = {
     gaps: allInsights.gaps.filter(it => it.scope !== 'body'),
     wins: allInsights.wins.filter(it => it.scope !== 'body'),
     stalls: allInsights.stalls.filter(it => it.scope !== 'body'),
     cycle: allInsights.cycle.filter(it => it.scope !== 'body'),
   };
-
-  const avgProtein = avg(logs.slice(-14), 'protein_g');
-  const avgCalories = avg(logs.slice(-14), 'calories_in');
-  const avgSleep = avg(logs.slice(-14), 'sleep_hours');
-  const avgSteps = avg(logs.slice(-14), 'steps');
-
-  const proteinTarget = profile.protein_target || (profile.start_weight_kg ? profile.start_weight_kg * 1.6 : null);
-  const sleepTarget = profile.sleep_target || 7.5;
-  const stepsTarget = profile.baseline_steps || 8000;
-  const calorieTarget = profile.calorie_target || null;
-
-  const goalBars = selectedGoal ? {
-    muscle: (
-      <>
-        <GoalProgressBar label="Protein" current={avgProtein} target={proteinTarget} unit="g" higherIsBetter={true} />
-        <GoalProgressBar label="Sleep" current={avgSleep} target={sleepTarget} unit="h" higherIsBetter={true} />
-      </>
-    ),
-    fatloss: (
-      <>
-        <GoalProgressBar label="Protein" current={avgProtein} target={proteinTarget} unit="g" higherIsBetter={true} />
-        {!!calorieTarget && (
-          <GoalProgressBar label="Calories" current={avgCalories} target={calorieTarget} unit="kcal" higherIsBetter={false} />
-        )}
-        <GoalProgressBar label="Steps" current={avgSteps} target={stepsTarget} unit="" higherIsBetter={true} />
-      </>
-    ),
-    stall: (
-      <>
-        <GoalProgressBar label="Protein" current={avgProtein} target={proteinTarget} unit="g" higherIsBetter={true} />
-        <GoalProgressBar label="Sleep" current={avgSleep} target={sleepTarget} unit="h" higherIsBetter={true} />
-        <GoalProgressBar label="Steps" current={avgSteps} target={stepsTarget} unit="" higherIsBetter={true} />
-      </>
-    ),
-    sleep: (
-      <>
-        <GoalProgressBar label="Sleep" current={avgSleep} target={sleepTarget} unit="h" higherIsBetter={true} />
-      </>
-    ),
-    energy: (
-      <>
-        <GoalProgressBar label="Sleep" current={avgSleep} target={sleepTarget} unit="h" higherIsBetter={true} />
-        <GoalProgressBar label="Protein" current={avgProtein} target={proteinTarget} unit="g" higherIsBetter={true} />
-      </>
-    ),
-    luteal: (
-      <>
-        <GoalProgressBar label="Sleep" current={avgSleep} target={sleepTarget} unit="h" higherIsBetter={true} />
-        <GoalProgressBar label="Protein" current={avgProtein} target={proteinTarget} unit="g" higherIsBetter={true} />
-      </>
-    ),
-    hunger: (
-      <>
-        <GoalProgressBar label="Protein" current={avgProtein} target={proteinTarget} unit="g" higherIsBetter={true} />
-        {!!calorieTarget && (
-          <GoalProgressBar label="Calories" current={avgCalories} target={calorieTarget} unit="kcal" higherIsBetter={false} />
-        )}
-      </>
-    ),
-  } : {};
 
   const wins = diagnosis.filter(d => d.tone === 'good');
   const blocks = diagnosis.filter(d => d.tone === 'warn');
@@ -4961,6 +4870,7 @@ function GoalProgressBar({ label, current, target, unit = '', higherIsBetter = f
 
       <ExportSection profile={profile} logs={logs} />
 
+      {/* Mode toggle */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 18, flexWrap: 'wrap' }}>
         {[
           { id: 'week', label: 'Week' },
@@ -4972,22 +4882,235 @@ function GoalProgressBar({ label, current, target, unit = '', higherIsBetter = f
             key={s.id}
             onClick={() => { setMode(s.id); setSelectedGoal(null); }}
             style={{
-              padding: '10px 18px',
-              borderRadius: 8,
+              padding: '10px 18px', borderRadius: 8,
               background: mode === s.id ? 'var(--teal)' : 'white',
               color: mode === s.id ? 'white' : 'var(--text)',
               border: `1px solid ${mode === s.id ? 'var(--teal)' : 'var(--border)'}`,
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer',
+              fontSize: 13, fontWeight: 600, cursor: 'pointer',
             }}
-          >
-            {s.label}
-          </button>
+          >{s.label}</button>
         ))}
       </div>
 
-      
+      {/* GOALS MODE */}
+      {mode === 'goals' && !selectedGoal && (
+        <div className="card" style={{ marginBottom: 14 }}>
+          <p style={{ fontSize: 14, color: 'var(--text-mute)', marginBottom: 16, lineHeight: 1.5 }}>
+            Pick what you want to figure out. Your answer uses your actual data plus what works in peri.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
+            {COACH_GOALS.map(g => (
+              <button
+                key={g.id}
+                onClick={() => setSelectedGoal(g.id)}
+                style={{
+                  textAlign: 'left', padding: 14, borderRadius: 10,
+                  background: 'var(--surface-2)', border: '1px solid var(--border)',
+                  display: 'flex', gap: 10, alignItems: 'center', cursor: 'pointer',
+                }}
+              >
+                <span style={{ fontSize: 20 }}>{g.icon}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{g.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {mode === 'goals' && selectedGoal && (
+        <>
+          <button onClick={() => setSelectedGoal(null)} style={{ background: 'transparent', border: 'none', color: 'var(--teal)', fontSize: 13, cursor: 'pointer', marginBottom: 14, fontWeight: 600 }}>
+            ← Back to questions
+          </button>
+          <div className="card" style={{ marginBottom: 14 }}>
+            <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 14, color: 'var(--text)' }}>
+              {COACH_GOALS.find(g => g.id === selectedGoal)?.icon} {COACH_GOALS.find(g => g.id === selectedGoal)?.label}
+            </h2>
+            {logs.length < 5 ? (
+              <p style={{ fontSize: 14, color: 'var(--text-mute)', lineHeight: 1.6 }}>
+                Log a few more days and I can answer this with your real numbers. Right now I can only give general guidance — come back after 5+ days of logging.
+              </p>
+            ) : (
+              answerGoal(selectedGoal, logs, profile).map((section, i) => (
+                <div key={i} style={{ marginBottom: 22, paddingTop: i === 0 ? 0 : 18, borderTop: i === 0 ? 'none' : '1px solid var(--divider)' }}>
+                  <h3 style={{ fontSize: 13, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--teal)', marginBottom: 10, fontWeight: 600 }}>{section.title}</h3>
+                  <p style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.7, whiteSpace: 'pre-line' }}>{section.body}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </>
+      )}
+
+      {/* RETROSPECTIVE MODES (week/month/all) */}
+      {mode !== 'goals' && scopedLogs.length === 0 && (
+        <div className="card-teal">
+          <p style={{ fontSize: 14, opacity: 0.9, lineHeight: 1.6 }}>
+            Nothing logged {label}. Open the Daily log to start.
+          </p>
+        </div>
+      )}
+
+      {mode !== 'goals' && scopedLogs.length > 0 && (
+        <>
+          {/* Headline stats */}
+          {(() => {
+            const wLogs = scopedLogs.filter(l => l.weight_kg);
+            const sw = wLogs[0]?.weight_kg;
+            const ew = wLogs[wLogs.length - 1]?.weight_kg;
+            const wChange = (sw && ew) ? ew - sw : null;
+            const bfLogs = scopedLogs.filter(l => l.body_fat_pct);
+            const bfChange = bfLogs.length >= 2 ? bfLogs[bfLogs.length-1].body_fat_pct - bfLogs[0].body_fat_pct : null;
+            const mLogs = scopedLogs.filter(l => l.muscle_kg);
+            const mChange = mLogs.length >= 2 ? mLogs[mLogs.length-1].muscle_kg - mLogs[0].muscle_kg : null;
+            const totalSessions = scopedLogs.reduce((s,l) => s + ((l.sessions || []).length), 0);
+            const avgSleep = avg(scopedLogs, 'sleep_hours');
+            const avgSteps = avg(scopedLogs, 'steps');
+            const avgProtein = avg(scopedLogs, 'protein_g');
+            return (
+              <>
+                <div className="row row-4" style={{ marginBottom: 14 }}>
+                  <div className="card">
+                    <div className="label">Days logged</div>
+                    <div className="stat-num-sm" style={{ marginTop: 8 }}>{scopedLogs.length}</div>
+                  </div>
+                  <div className="card">
+                    <div className="label">Weight</div>
+                    <div className="stat-num-sm" style={{ marginTop: 8, color: wChange !== null && wChange < 0 ? 'var(--success)' : 'var(--text)' }}>
+                      {wChange === null ? '–' : `${wChange > 0 ? '+' : ''}${fmt1(toDisplayWeight(wChange, unit))} ${weightUnit(unit)}`}
+                    </div>
+                  </div>
+                  <div className="card">
+                    <div className="label">Body fat</div>
+                    <div className="stat-num-sm" style={{ marginTop: 8, color: bfChange !== null && bfChange < 0 ? 'var(--success)' : 'var(--text)' }}>
+                      {bfChange === null ? '–' : `${bfChange > 0 ? '+' : ''}${fmt1(bfChange)}%`}
+                    </div>
+                  </div>
+                  <div className="card">
+                    <div className="label">Sessions</div>
+                    <div className="stat-num-sm" style={{ marginTop: 8 }}>{totalSessions}</div>
+                  </div>
+                </div>
+                <div className="row row-4" style={{ marginBottom: 22 }}>
+                  <div className="card-soft">
+                    <div className="label">Muscle</div>
+                    <div className="stat-num-sm" style={{ marginTop: 8, color: mChange !== null && mChange >= 0 ? 'var(--success)' : 'var(--pink)' }}>
+                      {mChange === null ? '–' : `${mChange > 0 ? '+' : ''}${fmt1(toDisplayWeight(mChange, unit))} ${weightUnit(unit)}`}
+                    </div>
+                  </div>
+                  <div className="card-soft">
+                    <div className="label">Avg sleep</div>
+                    <div className="stat-num-sm" style={{ marginTop: 8 }}>{avgSleep ? fmt1(avgSleep) + 'h' : '–'}</div>
+                  </div>
+                  <div className="card-soft">
+                    <div className="label">Avg steps</div>
+                    <div className="stat-num-sm" style={{ marginTop: 8 }}>{avgSteps ? fmt0(avgSteps) : '–'}</div>
+                  </div>
+                  <div className="card-soft">
+                    <div className="label">Avg protein</div>
+                    <div className="stat-num-sm" style={{ marginTop: 8 }}>{avgProtein ? fmt0(avgProtein) + 'g' : '–'}</div>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
+
+          {/* Wins */}
+          {wins.length > 0 && (
+            <div className="card-teal" style={{ marginBottom: 14 }}>
+              <div className="label" style={{ color: 'rgba(255,255,255,0.7)', marginBottom: 14 }}>What's working {label}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {wins.map((d, i) => (
+                  <div key={i} style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 10, padding: 14 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{d.headline}</div>
+                    <div style={{ fontSize: 13, opacity: 0.9, lineHeight: 1.5 }}>{d.detail}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Friction */}
+          {blocks.length > 0 && (
+            <div className="card" style={{ marginBottom: 14, borderLeft: '4px solid var(--pink)' }}>
+              <div className="label" style={{ marginBottom: 14, color: 'var(--pink)' }}>Where the friction is</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {blocks.map((d, i) => (
+                  <div key={i}>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{d.headline}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.5 }}>{d.detail}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Notes / neutral */}
+          {neutral.length > 0 && (
+            <div className="card" style={{ marginBottom: 14, borderLeft: '4px solid var(--teal)' }}>
+              <div className="label" style={{ marginBottom: 14, color: 'var(--teal)' }}>Notes</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {neutral.map((d, i) => (
+                  <div key={i}>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{d.headline}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.5 }}>{d.detail}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Behaviour scorecard — only on All time mode (needs lots of data) */}
+          {mode === 'all' && scorecard.ready && scorecard.items.length > 0 && (
+            <div className="card" style={{ marginBottom: 14, borderLeft: '4px solid var(--teal)' }}>
+              <div className="label" style={{ marginBottom: 4, color: 'var(--teal)' }}>Your biggest levers</div>
+              <p style={{ fontSize: 13, color: 'var(--text-mute)', marginBottom: 14, lineHeight: 1.5 }}>
+                Ranked by how much each habit moves YOUR scale. Focus on the top 2-3.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {(() => {
+                  const max = Math.max(...scorecard.items.map(it => Math.abs(it.impact)));
+                  return scorecard.items.map((it, i) => {
+                    const pct = Math.min(100, (Math.abs(it.impact) / max) * 100);
+                    const color = it.helps ? 'var(--success)' : 'var(--pink)';
+                    return (
+                      <div key={i}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                          <div style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-mute)', minWidth: 18 }}>#{i+1}</span>
+                            <span style={{ fontSize: 14, fontWeight: 600 }}>{it.habit}</span>
+                            <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>· {it.dataPoints} days</span>
+                          </div>
+                          <span style={{ fontSize: 13, fontWeight: 700, color }}>
+                            {it.helps ? '−' : '+'}{fmt1(toDisplayWeight(Math.abs(it.impact), unit))} {weightUnit(unit)}
+                          </span>
+                        </div>
+                        <div style={{ height: 6, background: 'var(--surface-2)', borderRadius: 3, overflow: 'hidden', marginBottom: 6 }}>
+                          <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3 }} />
+                        </div>
+                        <p style={{ fontSize: 12, color: 'var(--text-mute)', lineHeight: 1.5, marginLeft: 28 }}>{it.observation}</p>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+          )}
+
+          {/* Empty state */}
+          {diagnosis.length === 0 && (
+            <div className="card">
+              <p style={{ fontSize: 14, color: 'var(--text-mute)', lineHeight: 1.6 }}>
+                Not enough complete data {label} to surface patterns. Keep logging — sleep, water, protein, calories all need to be filled in for the engine to read between them.
+              </p>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ============================================================
 // HEALTH LOG — DEXA scans, symptoms, medications, lab values
 // One tab, 4 sections, all CRUD against new Supabase tables
