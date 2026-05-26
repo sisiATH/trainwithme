@@ -4753,7 +4753,6 @@ function answerGoal(goalId, logs, profile) {
 
   return sections;
 }
-// Small helper to show how close you are to a target for the Coach goals
 function GoalProgressBar({ label, current, target, unit = '', higherIsBetter = false }) {
   if (current == null || target == null || !isFinite(current) || !isFinite(target)) return null;
 
