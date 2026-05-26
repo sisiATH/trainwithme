@@ -4861,39 +4861,7 @@ function GoalProgressBar({ label, current, target, unit = '', higherIsBetter = f
   );
 }
 // Small helper to show how close you are to a target for the Coach goals
-function GoalProgressBar({ label, current, target, unit = '', higherIsBetter = false }) {
-  if (current == null || target == null || !isFinite(current) || !isFinite(target)) return null;
 
-  const rawPct = target === 0 ? 0 : (current / target) * 100;
-  const pct = Math.max(0, Math.min(130, Math.round(rawPct)));
-  const met = higherIsBetter ? current >= target : current <= target;
-
-  let color = 'var(--teal)';
-  if (met) color = 'var(--success)';
-  if (!higherIsBetter && rawPct > 115) color = 'var(--error)';
-
-  return (
-    <div style={{ marginTop: 10 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12, marginBottom: 4 }}>
-        <span style={{ color: 'var(--text)' }}>{label}</span>
-        <span style={{ color: met ? 'var(--success)' : 'var(--text-mute)' }}>
-          {fmt1(current)} / {fmt1(target)} {unit} {met ? '✓' : ''}
-        </span>
-      </div>
-      <div style={{ height: 6, borderRadius: 999, background: 'var(--border)', overflow: 'hidden' }}>
-        <div
-          style={{
-            height: '100%',
-            width: `${pct}%`,
-            borderRadius: 999,
-            background: color,
-            transition: 'width 0.35s ease',
-          }}
-        />
-      </div>
-    </div>
-  );
-}
  function CoachView({ profile, logs }) {
   const unit = profile.unit_system || 'kg';
   const [mode, setMode] = useState('week');
