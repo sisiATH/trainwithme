@@ -4414,10 +4414,10 @@ const COACH_GOALS = [
   { id: 'energy', label: 'More energy + better recovery', icon: '⚡' },
   { id: 'hunger', label: 'Manage hunger without restriction', icon: '🍽️' },
 ];
-  const avgProtein = avg(windowLogs, 'protein_g');
-  const avgCalories = avg(windowLogs, 'calories_in');
-  const avgSleep = avg(windowLogs, 'sleep_hours');
-  const avgSteps = avg(windowLogs, 'steps');
+  const avgProtein = avg(logs.slice(-14), 'protein_g');
+const avgCalories = avg(logs.slice(-14), 'calories_in');
+const avgSleep = avg(logs.slice(-14), 'sleep_hours');
+const avgSteps = avg(logs.slice(-14), 'steps');
 
   const proteinTarget = profile.weight_kg ? profile.weight_kg * 1.6 : null;
   const sleepTarget = 7.5;
