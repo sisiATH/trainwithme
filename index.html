@@ -2738,51 +2738,63 @@ function DailyLog({ profile, logs, todayLog, onLogSaved }) {
     return out;
   }, [logs]);
 
-  useEffect(() => {
-    // Reload form whenever the selected date changes or its log changes
-    const src = selectedLog;
-    if (!src) {
-      // Clear form for empty dates
-      setWeight(''); setBodyFat(''); setMuscle(''); setBodyWater('');
-      setHrv(''); setRhr(''); setSleep(''); setSleepQuality('');
-      setSteps(''); setCaloriesIn(''); setCaloriesOut(''); setProtein('');
-      setCarbs(''); setFat(''); setFibre(''); setWater('');
-      setMealCount(''); setFirstMealTime(''); setLastMealTime('');
-      setIsRefeed(false);
-      setMood(''); setStress(''); setCaffeine(''); setAlcohol('');
-      setSessions([]); setPeriodToday(false); setNotes('');
+ useEffect(() => {
+  const draftRaw = window.localStorage.getItem(draftKey);
+  if (draftRaw) {
+    try {
+      applyFormState(JSON.parse(draftRaw));
       setSavedAt(null);
       return;
+    } catch (e) {
+      window.localStorage.removeItem(draftKey);
     }
-    setWeight(src.weight_kg ? fmt1(toDisplayWeight(src.weight_kg, unit)) : '');
-    setBodyFat(src.body_fat_pct || '');
-    setMuscle(src.muscle_kg ? fmt1(toDisplayWeight(src.muscle_kg, unit)) : '');
-    setBodyWater(src.body_water_pct || '');
-    setHrv(src.hrv || '');
-    setRhr(src.rhr || '');
-    setSleep(src.sleep_hours || '');
-    setSleepQuality(src.sleep_quality || '');
-    setSteps(src.steps || '');
-    setCaloriesIn(src.calories_in || '');
-    setCaloriesOut(src.calories_out || '');
-    setProtein(src.protein_g || '');
-    setCarbs(src.carbs_g || '');
-    setFat(src.fat_g || '');
-    setFibre(src.fibre_g || '');
-    setWater(src.water_l ? fmt1(toDisplayWater(src.water_l, unit)) : '');
-    setMealCount(src.meal_count || '');
-    setFirstMealTime(src.first_meal_time || '');
-    setLastMealTime(src.last_meal_time || '');
-    setIsRefeed(!!src.is_refeed);
-    setMood(src.mood || '');
-    setStress(src.stress || '');
-    setCaffeine(src.caffeine_mg ? (src.caffeine_mg / 95).toFixed(1) : '');
-    setAlcohol(src.alcohol_units || '');
-    setSessions(src.sessions || []);
-    setPeriodToday(!!src.period_today);
-    setNotes(src.notes || '');
+  }
+
+  const src = selectedLog;
+  if (!src) {
+    applyFormState({
+      weight: '', bodyFat: '', muscle: '', bodyWater: '',
+      hrv: '', rhr: '', sleep: '', sleepQuality: '',
+      steps: '', caloriesIn: '', caloriesOut: '', protein: '', carbs: '', fat: '', fibre: '', water: '',
+      mealCount: '', firstMealTime: '', lastMealTime: '', isRefeed: false,
+      mood: '', stress: '', caffeine: '', alcohol: '',
+      sessions: [], periodToday: false, notes: '',
+    });
     setSavedAt(null);
-  }, [selectedLog, unit, date]);
+    return;
+  }
+
+  applyFormState({
+    weight: src.weight_kg ? fmt1(toDisplayWeight(src.weight_kg, unit)) : '',
+    bodyFat: src.body_fat_pct || '',
+    muscle: src.muscle_kg ? fmt1(toDisplayWeight(src.muscle_kg, unit)) : '',
+    bodyWater: src.body_water_pct || '',
+    hrv: src.hrv || '',
+    rhr: src.rhr || '',
+    sleep: src.sleep_hours || '',
+    sleepQuality: src.sleep_quality || '',
+    steps: src.steps || '',
+    caloriesIn: src.calories_in || '',
+    caloriesOut: src.calories_out || '',
+    protein: src.protein_g || '',
+    carbs: src.carbs_g || '',
+    fat: src.fat_g || '',
+    fibre: src.fibre_g || '',
+    water: src.water_l ? fmt1(toDisplayWater(src.water_l, unit)) : '',
+    mealCount: src.meal_count || '',
+    firstMealTime: src.first_meal_time || '',
+    lastMealTime: src.last_meal_time || '',
+    isRefeed: !!src.is_refeed,
+    mood: src.mood || '',
+    stress: src.stress || '',
+    caffeine: src.caffeine_mg ? (src.caffeine_mg / 95).toFixed(1) : '',
+    alcohol: src.alcohol_units || '',
+    sessions: src.sessions || [],
+    periodToday: !!src.period_today,
+    notes: src.notes || '',
+  });
+  setSavedAt(null);
+}, [selectedLog, unit, date, draftKey]);
 
   async function saveLog() {
     setSaving(true);
