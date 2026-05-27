@@ -2720,9 +2720,46 @@ function DailyLog({ profile, logs, todayLog, onLogSaved }) {
   const [sessions, setSessions] = useState([]);
   const [periodToday, setPeriodToday] = useState(false);
   const [notes, setNotes] = useState('');
-  const [showAddSession, setShowAddSession] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [savedAt, setSavedAt] = useState(null);
+ const [showAddSession, setShowAddSession] = useState(false);
+const [saving, setSaving] = useState(false);
+const [savedAt, setSavedAt] = useState(null);
+
+const draftKey = useMemo(
+  () => `dailylog_draft_${profile.user_id}_${date}`,
+  [profile.user_id, date]
+);
+
+function applyFormState(src) {
+  setWeight(src.weight ?? '');
+  setBodyFat(src.bodyFat ?? '');
+  setMuscle(src.muscle ?? '');
+  setBodyWater(src.bodyWater ?? '');
+  setHrv(src.hrv ?? '');
+  setRhr(src.rhr ?? '');
+  setSleep(src.sleep ?? '');
+  setSleepQuality(src.sleepQuality ?? '');
+  setSteps(src.steps ?? '');
+  setCaloriesIn(src.caloriesIn ?? '');
+  setCaloriesOut(src.caloriesOut ?? '');
+  setProtein(src.protein ?? '');
+  setCarbs(src.carbs ?? '');
+  setFat(src.fat ?? '');
+  setFibre(src.fibre ?? '');
+  setWater(src.water ?? '');
+  setMealCount(src.mealCount ?? '');
+  setFirstMealTime(src.firstMealTime ?? '');
+  setLastMealTime(src.lastMealTime ?? '');
+  setIsRefeed(!!src.isRefeed);
+  setMood(src.mood ?? '');
+  setStress(src.stress ?? '');
+  setCaffeine(src.caffeine ?? '');
+  setAlcohol(src.alcohol ?? '');
+  setSessions(Array.isArray(src.sessions) ? src.sessions : []);
+  setPeriodToday(!!src.periodToday);
+  setNotes(src.notes ?? '');
+}
+
+const selectedLog = useMemo(() => logs.find(l => l.date === date), [logs, date]);
 
   // Find the log for the currently selected date (could be today, yesterday, or any backdate)
   const selectedLog = useMemo(() => logs.find(l => l.date === date), [logs, date]);
