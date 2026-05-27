@@ -2723,10 +2723,9 @@ function DailyLog({ profile, logs, todayLog, onLogSaved }) {
  const [showAddSession, setShowAddSession] = useState(false);
 const [saving, setSaving] = useState(false);
 const [savedAt, setSavedAt] = useState(null);
-
 const draftKey = useMemo(
-  () => `dailylog_draft_${profile.user_id}_${date}`,
-  [profile.user_id, date]
+  () => `dailylog_draft_${profile.userid}_${date}`,
+  [profile.userid, date]
 );
 
 function applyFormState(src) {
