@@ -2758,8 +2758,6 @@ function applyFormState(src) {
   setNotes(src.notes ?? '');
 }
 
-const selectedLog = useMemo(() => logs.find(l => l.date === date), [logs, date]);
-
   // Find the log for the currently selected date (could be today, yesterday, or any backdate)
   const selectedLog = useMemo(() => logs.find(l => l.date === date), [logs, date]);
 
