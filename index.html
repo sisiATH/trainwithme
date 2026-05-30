@@ -1018,10 +1018,11 @@ function narrator(logs, profile, todayLog) {
       const avgCalOut = avg(recent, 'calories_out');
       const avgCalIn = avg(recent, 'calories_in');
       // Yesterday's variables — what stood out
-      if (yesterday.sleep_hours && avgSleep) {
-        const d = yesterday.sleep_hours - avgSleep;
-        if (Math.abs(d) >= 0.5) candidates.push(`sleep ${d > 0 ? 'high' : 'low'} (${fmt1(yesterday.sleep_hours)}h vs avg ${fmt1(avgSleep)}h)`);
-      }
+      if (todaySleep && avgSleep) {
+  const d = todaySleep - avgSleep;
+  if (Math.abs(d) > 0.5)
+    candidates.push(`sleep ${d > 0 ? 'high' : 'low'} (${fmt1(todaySleep)}h vs avg ${fmt1(avgSleep)}h)`);
+}
       if (yesterday.steps && avgSteps) {
         const d = yesterday.steps - avgSteps;
         if (Math.abs(d) >= 1500) candidates.push(`steps ${d > 0 ? 'higher' : 'lower'} (${fmt0(yesterday.steps)} vs avg ${fmt0(avgSteps)})`);
