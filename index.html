@@ -998,11 +998,10 @@ function narrator(logs, profile, todayLog) {
     daysLogged: sorted.length,
   };
 
-  // ============ 1. TODAY VS YESTERDAY OBSERVATION ============
+ // ============ 1. TODAY VS YESTERDAY OBSERVATION ============
   if (sorted.length >= 2) {
     const todayDate = ymd(today());
     const todayRow = todayLog || sorted.find(l => l.date === todayDate);
-    // Find the most recent prior day with weight
     const priorDays = sorted.filter(l => l.date !== todayDate && l.weight_kg).slice(-3);
     const yesterday = priorDays.length ? priorDays[priorDays.length - 1] : null;
 
@@ -1010,20 +1009,20 @@ function narrator(logs, profile, todayLog) {
       const diff = todayRow.weight_kg - yesterday.weight_kg;
       const direction = diff < -0.1 ? 'down' : diff > 0.1 ? 'up' : 'flat';
       const absDiff = Math.abs(diff);
+
       const candidates = [];
-      // Compare yesterday vs the 3-7 day average to find what was different about it
+      const todaySleep = todayRow?.sleep_hours;
+
       const recent = sorted.filter(l => l.date !== yesterday.date && l.date !== todayRow.date).slice(-7);
       const avgSleep = avg(recent, 'sleep_hours');
       const avgSteps = avg(recent, 'steps');
       const avgCalOut = avg(recent, 'calories_out');
       const avgCalIn = avg(recent, 'calories_in');
-      // Yesterday's variables — what stood out
+
       if (todaySleep && avgSleep) {
         const d = todaySleep - avgSleep;
         if (Math.abs(d) > 0.5)
-      candidates.push(`sleep ${d > 0 ? 'high' : 'low'} (${fmt1(todaySleep)}h vs avg ${fmt1(avgSleep)}h)`);
-      const candidates = [];
-      const todaySleep = todayRow?.sleep_hours;  // ← add this line
+          candidates.push(`sleep ${d > 0 ? 'high' : 'low'} (${fmt1(todaySleep)}h vs avg ${fmt1(avgSleep)}h)`);
       }
       if (yesterday.steps && avgSteps) {
         const d = yesterday.steps - avgSteps;
@@ -1076,7 +1075,6 @@ function narrator(logs, profile, todayLog) {
       };
     }
   }
-
   // ============ 2. WHAT'S DIFFERENT ON DOWN-DAYS VS UP-DAYS ============
   // Use 3-day FORWARD weight change (smooths next-morning water noise).
   // Neutral language: "scale moved down" vs "scale moved up" — no judgement.
