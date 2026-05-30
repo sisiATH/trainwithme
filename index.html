@@ -192,6 +192,8 @@ const fromDisplayWater = (val, unit) => {
 
 function calcPhase(cycleDay, cycleLength, periodLength) {
   if (!cycleDay || !cycleLength) return null;
+  // If past expected end of cycle, stay in Luteal until period logged
+  if (cycleDay > cycleLength) return 'Luteal';
   if (cycleDay <= (periodLength || 5)) return 'Menstrual';
   const foll = Math.round(cycleLength * 0.45);
   const ovul = Math.round(cycleLength * 0.55);
