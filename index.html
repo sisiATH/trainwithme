@@ -2216,7 +2216,7 @@ function Dashboard({ profile, logs, todayLog, setView }) {
   if (profile.track_cycle && profile.last_period_start) {
     const days = daysBetween(parseYMD(profile.last_period_start), today());
     if (days >= 0) {
-      cycleDay = (days % (profile.cycle_length || 28)) + 1;
+      cycleDay = days + 1;  // count from last period, no wrapping
       phase = calcPhase(cycleDay, profile.cycle_length, profile.period_length);
     }
   }
