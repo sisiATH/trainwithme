@@ -1022,6 +1022,8 @@ function narrator(logs, profile, todayLog) {
         const d = todaySleep - avgSleep;
         if (Math.abs(d) > 0.5)
       candidates.push(`sleep ${d > 0 ? 'high' : 'low'} (${fmt1(todaySleep)}h vs avg ${fmt1(avgSleep)}h)`);
+      const candidates = [];
+      const todaySleep = todayRow?.sleep_hours;  // ← add this line
       }
       if (yesterday.steps && avgSteps) {
         const d = yesterday.steps - avgSteps;
