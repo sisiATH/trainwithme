@@ -4356,36 +4356,7 @@ async function exportPDF(logs, profile, dateFrom, dateTo) {
     margin: { left: margin, right: margin },
   });
 
- // ---------- FOOTER ----------
-  const pageCount = doc.internal.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i);
-    doc.setFontSize(7); doc.setTextColor(140);
-    doc.text('Train With Me · Educational use only — not medical advice', margin, 290);
-    doc.text(`Page ${i} of ${pageCount}`, pageW - margin, 290, { align: 'right' });
-  }
-
-  doc.save(`train-with-me-${dateFrom}-to-${dateTo}.pdf`);
-}
-
 function ExportSection({ profile, logs }) {
-  
-  // ---------- DAILY LOG TABLE ----------
-  doc.addPage(); y = margin;
-  doc.setFontSize(11); doc.setTextColor(0, 104, 122); doc.setFont(undefined, 'bold');
-  doc.text('Daily log', margin, y); y += 5;
-  doc.autoTable({
-    startY: y,
-    head: [['Date', `Wt`, 'BF%', 'HRV', 'RHR', 'Sleep', 'Stps', 'Cal in', 'Cal out', 'Prot', 'Alc', 'Sess']],
-    body: filtered.map(l => [l.date,
-      l.weight_kg ? fmt1(toDisplayWeight(l.weight_kg, unit)) : '',
-      l.body_fat_pct ?? '', l.hrv ?? '', l.rhr ?? '',
-      l.sleep_hours ?? '', l.steps ?? '', l.calories_in ?? '', l.calories_out ?? '',
-      l.protein_g ?? '', l.alcohol_units ?? '', (l.sessions || []).length || '']),
-    theme: 'striped', styles: { fontSize: 7, cellPadding: 1.2 },
-    headStyles: { fillColor: [0, 104, 122], textColor: 255, fontSize: 7 },
-    margin: { left: margin, right: margin },
-  });
 
   // ---------- FOOTER on every page ----------
   const pageCount = doc.internal.getNumberOfPages();
