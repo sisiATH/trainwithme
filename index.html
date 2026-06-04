@@ -5128,104 +5128,149 @@ function ScanMetric({ label, value, prev, unit = '', convert, higherBetter, lowe
 
 function BodyScanForm({ unit, onSave, onCancel }) {
   const [date, setDate] = useState(ymd(today()));
-  const [type, setType] = useState('DEXA');
+  const [type, setType] = useState('InBody');
   const [w, setW] = useState('');
   const [bf, setBf] = useState('');
   const [lean, setLean] = useState('');
   const [fat, setFat] = useState('');
   const [visc, setVisc] = useState('');
   const [bone, setBone] = useState('');
+  const [ecwTbw, setEcwTbw] = useState('');
   const [android, setAndroid] = useState('');
   const [gynoid, setGynoid] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const isDexa = type === 'DEXA';
+  const isInBody = type === 'InBody';
+
   async function save() {
     setSaving(true);
     const { data: { user } } = await db.auth.getUser();
-    await db.from('body_scans').insert({
-      user_id: user.id,
-      scan_date: date,
-      scan_type: type,
-      weight_kg: w ? fromDisplayWeight(Number(w), unit) : null,
-      body_fat_pct: bf ? Number(bf) : null,
-      lean_mass_kg: lean ? fromDisplayWeight(Number(lean), unit) : null,
-      fat_mass_kg: fat ? fromDisplayWeight(Number(fat), unit) : null,
-      visceral_fat: visc ? Number(visc) : null,
-      bone_density: bone ? Number(bone) : null,
-      android_fat_pct: android ? Number(android) : null,
-      gynoid_fat_pct: gynoid ? Number(gynoid) : null,
+
+    await db.from('bodyscans').insert({
+      userid: user.id,
+      scandate: date,
+      scantype: type,
+      weightkg: w ? fromDisplayWeight(Number(w), unit) : null,
+      bodyfatpct: bf ? Number(bf) : null,
+      leanmasskg: lean ? fromDisplayWeight(Number(lean), unit) : null,
+      fatmasskg: fat ? fromDisplayWeight(Number(fat), unit) : null,
+      visceralfat: visc ? Number(visc) : null,
+      bonedensity: isDexa && bone ? Number(bone) : null,
+      ecwtbw: isInBody && ecwTbw ? Number(ecwTbw) : null,
+      androidfatpct: isDexa && android ? Number(android) : null,
+      gynoidfatpct: isDexa && gynoid ? Number(gynoid) : null,
       notes: notes || null,
     });
+
     setSaving(false);
     onSave();
   }
+
   return (
     <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: 16, marginTop: 12 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 12 }}>
-        <div><div className="field-label">Date</div><input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} /></div>
-        <div><div className="field-label">Scan type</div>
-          <select className="input" value={type} onChange={(e) => setType(e.target.value)}>
-            <option>DEXA</option><option>InBody</option><option>Hume</option><option>Other</option>
+        <div>
+          <div className="field-label">Date</div>
+          <input type="date" className="input" value={date} onChange={e => setDate(e.target.value)} />
+        </div>
+
+        <div>
+          <div className="field-label">Scan type</div>
+          <select className="input" value={type} onChange={e => setType(e.target.value)}>
+            <option>DEXA</option>
+            <option>InBody</option>
+            <option>Hume</option>
+            <option>Other</option>
           </select>
         </div>
-        <div><div className="field-label">Weight ({weightUnit(unit)})</div><input type="number" step="0.1" className="input" value={w} onChange={(e) => setW(e.target.value)} /></div>
-        <div><div className="field-label">Body fat %</div><input type="number" step="0.1" className="input" value={bf} onChange={(e) => setBf(e.target.value)} /></div>
-        <div><div className="field-label">Lean mass ({weightUnit(unit)})</div><input type="number" step="0.1" className="input" value={lean} onChange={(e) => setLean(e.target.value)} /></div>
-        <div><div className="field-label">Fat mass ({weightUnit(unit)})</div><input type="number" step="0.1" className="input" value={fat} onChange={(e) => setFat(e.target.value)} /></div>
-        <div><div className="field-label">Visceral fat</div><input type="number" step="0.1" className="input" value={visc} onChange={(e) => setVisc(e.target.value)} /></div>
-        <div><div className="field-label">Bone density</div><input type="number" step="0.01" className="input" value={bone} onChange={(e) => setBone(e.target.value)} /></div>
-        <div><div className="field-label">Android fat %</div><input type="number" step="0.1" className="input" value={android} onChange={(e) => setAndroid(e.target.value)} /></div>
-        <div><div className="field-label">Gynoid fat %</div><input type="number" step="0.1" className="input" value={gynoid} onChange={(e) => setGynoid(e.target.value)} /></div>
-      </div>
-      <div><div className="field-label">Notes</div><textarea className="input" rows="2" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Practitioner observations, anything to remember" /></div>
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-        <button onClick={onCancel} className="btn-ghost" style={{ padding: '8px 16px', fontSize: 13 }}>Cancel</button>
-        <button onClick={save} disabled={saving} className="btn" style={{ padding: '8px 16px', fontSize: 13 }}>{saving ? 'Saving…' : 'Save scan'}</button>
-      </div>
-    </div>
-  );
-}
 
-// ---------- Symptoms (peri-specific daily log) ----------
-function SymptomsSection({ symptoms, onChange }) {
-  const [adding, setAdding] = useState(false);
-  return (
-    <>
-      <div className="card" style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-          <div>
-            <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Peri symptoms</h3>
-            <p style={{ fontSize: 13, color: 'var(--text-mute)' }}>Track what's changing in your body. Helps practitioners see patterns over weeks.</p>
-          </div>
-          {!adding && <button onClick={() => setAdding(true)} className="btn" style={{ padding: '8px 16px', fontSize: 13 }}>+ Log day</button>}
+        <div>
+          <div className="field-label">Weight ({weightUnit(unit)})</div>
+          <input type="number" step="0.1" className="input" value={w} onChange={e => setW(e.target.value)} />
         </div>
-        {adding && <SymptomsForm onSave={() => { setAdding(false); onChange(); }} onCancel={() => setAdding(false)} />}
+
+        <div>
+          <div className="field-label">Body fat %</div>
+          <input type="number" step="0.1" className="input" value={bf} onChange={e => setBf(e.target.value)} />
+        </div>
+
+        <div>
+          <div className="field-label">Lean mass ({weightUnit(unit)})</div>
+          <input type="number" step="0.1" className="input" value={lean} onChange={e => setLean(e.target.value)} />
+        </div>
+
+        <div>
+          <div className="field-label">Fat mass ({weightUnit(unit)})</div>
+          <input type="number" step="0.1" className="input" value={fat} onChange={e => setFat(e.target.value)} />
+        </div>
+
+        <div>
+          <div className="field-label">Visceral fat</div>
+          <input type="number" step="0.1" className="input" value={visc} onChange={e => setVisc(e.target.value)} />
+        </div>
+
+        {isDexa && (
+          <div>
+            <div className="field-label">Bone density</div>
+            <input type="number" step="0.01" className="input" value={bone} onChange={e => setBone(e.target.value)} />
+          </div>
+        )}
+
+        {isInBody && (
+          <div>
+            <div className="field-label">ECW/TBW %</div>
+            <input
+              type="number"
+              step="0.1"
+              className="input"
+              value={ecwTbw}
+              onChange={e => setEcwTbw(e.target.value)}
+              placeholder="e.g. 45.3"
+            />
+          </div>
+        )}
+
+        {isDexa && (
+          <>
+            <div>
+              <div className="field-label">Android fat %</div>
+              <input type="number" step="0.1" className="input" value={android} onChange={e => setAndroid(e.target.value)} />
+            </div>
+
+            <div>
+              <div className="field-label">Gynoid fat %</div>
+              <input type="number" step="0.1" className="input" value={gynoid} onChange={e => setGynoid(e.target.value)} />
+            </div>
+          </>
+        )}
       </div>
 
-      {symptoms.length === 0 && !adding && (
-        <div className="card"><p style={{ fontSize: 13, color: 'var(--text-mute)' }}>No symptoms logged. Add a day to start tracking.</p></div>
+      {isInBody && (
+        <p style={{ fontSize: 12, color: 'var(--text-mute)', marginBottom: 12, lineHeight: 1.5 }}>
+          ECW/TBW helps flag fluid balance and water retention patterns. Useful when weight is up but body fat is unchanged.
+        </p>
       )}
 
-      {symptoms.map(s => (
-        <div key={s.date} className="card" style={{ marginBottom: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-            <div style={{ fontSize: 14, fontWeight: 600 }}>{s.date}</div>
-            <button onClick={async () => { if (confirm('Delete this symptom log?')) { await db.from('symptoms').delete().eq('date', s.date); onChange(); } }} style={{ background: 'transparent', border: 'none', color: 'var(--text-faint)', fontSize: 12, cursor: 'pointer' }}>Delete</button>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10, fontSize: 12 }}>
-            {s.hot_flashes !== null && <div><span style={{ color: 'var(--text-mute)' }}>Hot flashes:</span> <strong>{s.hot_flashes}</strong></div>}
-            {s.night_sweats && <div><strong style={{ color: 'var(--pink)' }}>Night sweats</strong></div>}
-            {s.brain_fog !== null && <div><span style={{ color: 'var(--text-mute)' }}>Brain fog:</span> <strong>{s.brain_fog}/5</strong></div>}
-            {s.joint_pain !== null && <div><span style={{ color: 'var(--text-mute)' }}>Joint pain:</span> <strong>{s.joint_pain}/5</strong></div>}
-            {s.mood_swings !== null && <div><span style={{ color: 'var(--text-mute)' }}>Mood:</span> <strong>{s.mood_swings}/5</strong></div>}
-            {s.anxiety !== null && <div><span style={{ color: 'var(--text-mute)' }}>Anxiety:</span> <strong>{s.anxiety}/5</strong></div>}
-            {s.bloating !== null && <div><span style={{ color: 'var(--text-mute)' }}>Bloating:</span> <strong>{s.bloating}/5</strong></div>}
-            {s.headache && <div><strong style={{ color: 'var(--pink)' }}>Headache</strong></div>}
-          </div>
-          {s.notes && <p style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 10, fontStyle: 'italic' }}>{s.notes}</p>}
-        </div>
-      ))}
-    </>
+      <div>
+        <div className="field-label">Notes</div>
+        <textarea
+          className="input"
+          rows={2}
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+          placeholder="Anything to remember from this scan"
+        />
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+        <button onClick={onCancel} className="btn-ghost" style={{ padding: '8px 16px', fontSize: 13 }}>Cancel</button>
+        <button onClick={save} className="btn" style={{ padding: '8px 16px', fontSize: 13 }} disabled={saving}>
+          {saving ? 'Saving...' : 'Save scan'}
+        </button>
+      </div>
+    </div>
   );
 }
 
