@@ -4022,48 +4022,44 @@ function ReviewView({ profile, logs }) {
 // EXPORTS — CSV (raw data) + PDF (charts for nutritionist)
 // ============================================================
 
-// Fetch all health log data (scans, symptoms, meds, labs) for a date range
+// Fetch all health log data (scans, s, meds, labs) for a date range
 async function fetchHealthLog(dateFrom, dateTo) {
   const [scans, symptoms, meds, labs] = await Promise.all([
-    db.from('bodyscans').select('*').gte('scan_date', dateFrom).lte('scan_date', dateTo).order('scan_date', { ascending: false }),
-    db.from('symptoms').select('*').gte('date', dateFrom).lte('date', dateTo).order('date', { ascending: false }),
-    db.from('medications').select('*').order('start_date', { ascending: false, nullsFirst: false }),
-    db.from('labs').select('*').gte('test_date', dateFrom).lte('test_date', dateTo).order('test_date', { ascending: false }),
+    db.from('body_scans')
+      .select('*')
+      .gte('scandate', dateFrom)
+      .lte('scandate', dateTo)
+      .order('scandate', { ascending: false }),
+
+    db.from('symptoms')
+      .select('*')
+      .gte('date', dateFrom)
+      .lte('date', dateTo)
+      .order('date', { ascending: false }),
+
+    db.from('medications')
+      .select('*')
+      .order('startdate', { ascending: false }),
+
+    db.from('labs')
+      .select('*')
+      .gte('testdate', dateFrom)
+      .lte('testdate', dateTo)
+      .order('testdate', { ascending: false }),
   ]);
-  return { scans: scans.data || [], symptoms: symptoms.data || [], meds: meds.data || [], labs: labs.data || [] };
-}
 
-function exportCSV(logs, profile, dateFrom, dateTo) {
-  const unit = profile.unit_system || 'kg';
-  const filtered = logs.filter(l => l.date >= dateFrom && l.date <= dateTo);
-  const headers = ['Date', `Weight (${weightUnit(unit)})`, 'Body fat %', `Muscle (${weightUnit(unit)})`, 'Body water %',
-    'HRV (ms)', 'RHR (bpm)', 'Sleep (h)', 'Sleep quality', 'Mood', 'Stress',
-    'Steps', 'Calories in', 'Calories out', 'Protein (g)', 'Carbs (g)', 'Fat (g)', 'Fibre (g)',
-    `Water (${waterUnit(unit)})`, 'Caffeine (cups)', 'Alcohol (units)', 'Sessions', 'Session kcal', 'Period today', 'Notes'];
-  const rows = filtered.map(l => {
-    const sessSum = (l.sessions || []).map(s => `${s.timeOfDay || ''} ${s.type} ${s.duration}min${s.rpe ? ' RPE' + s.rpe : ''}${s.calories ? ' ' + s.calories + 'kcal' : ''}`).join('; ');
-    const sessCal = (l.sessions || []).reduce((sum, s) => sum + (s.calories || 0), 0);
-    return [l.date,
-      l.weight_kg ? fmt1(toDisplayWeight(l.weight_kg, unit)) : '',
-      l.body_fat_pct ?? '',
-      l.muscle_kg ? fmt1(toDisplayWeight(l.muscle_kg, unit)) : '',
-      l.body_water_pct ?? '', l.hrv ?? '', l.rhr ?? '', l.sleep_hours ?? '', l.sleep_quality ?? '',
-      l.mood ?? '', l.stress ?? '', l.steps ?? '', l.calories_in ?? '', l.calories_out ?? '',
-      l.protein_g ?? '', l.carbs_g ?? '', l.fat_g ?? '', l.fibre_g ?? '',
-      l.water_l ? fmt1(toDisplayWater(l.water_l, unit)) : '',
-      l.caffeine_mg ? (l.caffeine_mg / 95).toFixed(1) : '',
-      l.alcohol_units ?? '', sessSum, sessCal || '', l.period_today ? 'Yes' : '', (l.notes || '').replace(/[\r\n]+/g, ' ')];
-  });
-  const escape = (v) => { const s = String(v ?? ''); return (s.includes(',') || s.includes('"') || s.includes('\n')) ? `"${s.replace(/"/g, '""')}"` : s; };
-  const csv = [headers, ...rows].map(r => r.map(escape).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `train-with-me-${dateFrom}-to-${dateTo}.csv`;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
+  if (scans.error) throw scans.error;
+  if (symptoms.error) throw symptoms.error;
+  if (meds.error) throw meds.error;
+  if (labs.error) throw labs.error;
 
+  return {
+    scans: scans.data || [],
+    symptoms: symptoms.data || [],
+    meds: meds.data || [],
+    labs: labs.data || [],
+  };
+}
 // Draw a simple line chart on a jsPDF doc — returns the y position after drawing
 function drawPdfChart(doc, x, y, w, h, series, title, dates) {
   doc.setFontSize(9); doc.setTextColor(40, 60, 70); doc.setFont(undefined, 'bold');
