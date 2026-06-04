@@ -4025,7 +4025,7 @@ function ReviewView({ profile, logs }) {
 // Fetch all health log data (scans, symptoms, meds, labs) for a date range
 async function fetchHealthLog(dateFrom, dateTo) {
   const [scans, symptoms, meds, labs] = await Promise.all([
-    db.from('body_scans').select('*').gte('scan_date', dateFrom).lte('scan_date', dateTo).order('scan_date', { ascending: false }),
+    db.from('bodyscans').select('*').gte('scan_date', dateFrom).lte('scan_date', dateTo).order('scan_date', { ascending: false }),
     db.from('symptoms').select('*').gte('date', dateFrom).lte('date', dateTo).order('date', { ascending: false }),
     db.from('medications').select('*').order('start_date', { ascending: false, nullsFirst: false }),
     db.from('labs').select('*').gte('test_date', dateFrom).lte('test_date', dateTo).order('test_date', { ascending: false }),
@@ -5005,7 +5005,7 @@ function HealthLogView({ profile }) {
   async function loadAll() {
     setLoading(true);
     const [s, sy, m, l] = await Promise.all([
-      db.from('body_scans').select('*').order('scan_date', { ascending: false }),
+      db.from('bodyscans').select('*').order('scan_date', { ascending: false }),
       db.from('symptoms').select('*').order('date', { ascending: false }),
       db.from('medications').select('*').order('start_date', { ascending: false, nullsFirst: false }),
       db.from('labs').select('*').order('test_date', { ascending: false }),
@@ -5047,7 +5047,7 @@ function HealthLogView({ profile }) {
 
       {loading && <div className="card"><p style={{ fontSize: 13, color: 'var(--text-mute)' }}>Loading…</p></div>}
 
-      {!loading && section === 'scans' && <body_scansSection scans={scans} unit={unit} onChange={loadAll} />}
+      {!loading && section === 'scans' && <bodyscansSection scans={scans} unit={unit} onChange={loadAll} />}
       {!loading && section === 'symptoms' && <SymptomsSection symptoms={symptoms} onChange={loadAll} />}
       {!loading && section === 'meds' && <MedicationsSection meds={meds} onChange={loadAll} />}
       {!loading && section === 'labs' && <LabsSection labs={labs} onChange={loadAll} />}
@@ -5056,7 +5056,7 @@ function HealthLogView({ profile }) {
 }
 
 // ---------- Body Scans (DEXA, InBody, Hume) ----------
-function body_scansSection({ scans, unit, onChange }) {
+function bodyscansSection({ scans, unit, onChange }) {
   const [adding, setAdding] = useState(false);
   return (
     <>
@@ -5068,7 +5068,7 @@ function body_scansSection({ scans, unit, onChange }) {
           </div>
           {!adding && <button onClick={() => setAdding(true)} className="btn" style={{ padding: '8px 16px', fontSize: 13 }}>+ Add scan</button>}
         </div>
-        {adding && <body_scanForm unit={unit} onSave={async () => { setAdding(false); onChange(); }} onCancel={() => setAdding(false)} />}
+        {adding && <bodyscanForm unit={unit} onSave={async () => { setAdding(false); onChange(); }} onCancel={() => setAdding(false)} />}
       </div>
 
       {scans.length === 0 && !adding && (
@@ -5083,7 +5083,7 @@ function body_scansSection({ scans, unit, onChange }) {
               <div>
                 <div style={{ fontSize: 15, fontWeight: 700 }}>{scan.scan_type || 'Scan'} · {scan.scan_date}</div>
               </div>
-              <button onClick={async () => { if (confirm('Delete this scan?')) { await db.from('body_scans').delete().eq('id', scan.id); onChange(); } }} style={{ background: 'transparent', border: 'none', color: 'var(--text-faint)', fontSize: 12, cursor: 'pointer' }}>Delete</button>
+              <button onClick={async () => { if (confirm('Delete this scan?')) { await db.from('bodyscans').delete().eq('id', scan.id); onChange(); } }} style={{ background: 'transparent', border: 'none', color: 'var(--text-faint)', fontSize: 12, cursor: 'pointer' }}>Delete</button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
              <ScanMetric
@@ -5177,7 +5177,7 @@ function ScanMetric({ label, value, prev, unit = '', convert, higherBetter, lowe
   );
 }
 
-function body_scanForm({ unit, onSave, onCancel }) {
+function bodyscanForm({ unit, onSave, onCancel }) {
   const [date, setDate] = useState(ymd(today()));
   const [type, setType] = useState('InBody');
   const [w, setW] = useState('');
@@ -5199,7 +5199,7 @@ function body_scanForm({ unit, onSave, onCancel }) {
     setSaving(true);
     const { data: { user } } = await db.auth.getUser();
 
-    await db.from('body_scans').insert({
+    await db.from('bodyscans').insert({
       userid: user.id,
       scandate: date,
       scantype: type,
