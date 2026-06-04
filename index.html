@@ -4992,69 +4992,138 @@ function GoalProgressBar({ label, current, target, unit = '', higherIsBetter = f
 // HEALTH LOG — DEXA scans, symptoms, medications, lab values
 // One tab, 4 sections, all CRUD against new Supabase tables
 // ============================================================
-function HealthLogView({ profile }) {
-  const unit = profile.unit_system || 'kg';
-  const [section, setSection] = useState('scans');
+// HEALTH LOG – body scans, symptoms, meds, labs
+
+function HealthLogView({ profile, logs }) {
+  const [section, setSection] = useState('scans'); // 'scans' | 'symptoms' | 'meds' | 'labs'
   const [scans, setScans] = useState([]);
   const [symptoms, setSymptoms] = useState([]);
   const [meds, setMeds] = useState([]);
   const [labs, setLabs] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // ---- Data fetch ----
   async function loadAll() {
     setLoading(true);
-    const [s, sy, m, l] = await Promise.all([
-      db.from('bodyscans').select('*').order('scan_date', { ascending: false }),
-      db.from('symptoms').select('*').order('date', { ascending: false }),
-      db.from('medications').select('*').order('start_date', { ascending: false, nullsFirst: false }),
-      db.from('labs').select('*').order('test_date', { ascending: false }),
-    ]);
-    setScans(s.data || []);
-    setSymptoms(sy.data || []);
-    setMeds(m.data || []);
-    setLabs(l.data || []);
-    setLoading(false);
+    try {
+      const [s, sy, m, l] = await Promise.all([
+        db
+          .from('body_scans')
+          .select('*')
+          .order('scandate', { ascending: false }),
+        db
+          .from('symptoms')
+          .select('*')
+          .order('date', { ascending: false }),
+        db
+          .from('medications')
+          .select('*')
+          .order('startdate', { ascending: false, nullsFirst: false }),
+        db
+          .from('labs')
+          .select('*')
+          .order('testdate', { ascending: false }),
+      ]);
+
+      if (s.error) throw s.error;
+      if (sy.error) throw sy.error;
+      if (m.error) throw m.error;
+      if (l.error) throw l.error;
+
+      setScans(s.data || []);
+      setSymptoms(sy.data || []);
+      setMeds(m.data || []);
+      setLabs(l.data || []);
+    } catch (e) {
+      console.error('Health log load failed:', e);
+      alert(`Health log load failed: ${e.message}`);
+      setScans([]);
+      setSymptoms([]);
+      setMeds([]);
+      setLabs([]);
+    } finally {
+      setLoading(false);
+    }
   }
-  useEffect(() => { loadAll(); }, []);
+
+  useEffect(() => {
+    loadAll();
+  }, []);
+
+  const unit = profile.unitsystem ?? 'kg';
 
   return (
     <div className="fade-in">
       <h1 className="page-title">Health log</h1>
-      <p className="page-sub">Body scans, symptoms, medications, lab values — your complete health record.</p>
+      <p className="page-sub">
+        Body scans, symptoms, medications, lab values — your complete health record.
+      </p>
 
-      {/* Section toggle */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 18, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
         {[
           { id: 'scans', label: 'Body scans' },
           { id: 'symptoms', label: 'Symptoms' },
           { id: 'meds', label: 'Medications' },
           { id: 'labs', label: 'Lab results' },
-        ].map(s => (
+        ].map((tab) => (
           <button
-            key={s.id}
-            onClick={() => setSection(s.id)}
+            key={tab.id}
+            onClick={() => setSection(tab.id)}
             style={{
-              padding: '10px 18px', borderRadius: 8,
-              background: section === s.id ? 'var(--teal)' : 'white',
-              color: section === s.id ? 'white' : 'var(--text)',
-              border: `1px solid ${section === s.id ? 'var(--teal)' : 'var(--border)'}`,
-              fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              padding: '8px 18px',
+              borderRadius: 999,
+              border: '1px solid var(--border)',
+              background: section === tab.id ? 'var(--teal)' : '#fff',
+              color: section === tab.id ? '#fff' : 'var(--text)',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
             }}
-          >{s.label}</button>
+          >
+            {tab.label}
+          </button>
         ))}
       </div>
 
-      {loading && <div className="card"><p style={{ fontSize: 13, color: 'var(--text-mute)' }}>Loading…</p></div>}
+      {loading ? (
+        <div className="card">
+          <p style={{ fontSize: 14, color: 'var(--text-mute)' }}>
+            Loading health data…
+          </p>
+        </div>
+      ) : (
+        <>
+          {section === 'scans' && (
+            <BodyScansSection
+              profile={profile}
+              scans={scans}
+              onChange={loadAll}
+            />
+          )}
+          {section === 'symptoms' && (
+            <SymptomsSection
+              symptoms={symptoms}
+              onChange={loadAll}
+            />
+          )}
+          {section === 'meds' && (
+            <MedicationsSection
+              meds={meds}
+              onChange={loadAll}
+            />
+          )}
+          {section === 'labs' && (
+            <LabsSection
+              labs={labs}
+              onChange={loadAll}
+            />
+          )}
+        </>
+      )}
 
-      {!loading && section === 'scans' && <bodyscansSection scans={scans} unit={unit} onChange={loadAll} />}
-      {!loading && section === 'symptoms' && <SymptomsSection symptoms={symptoms} onChange={loadAll} />}
-      {!loading && section === 'meds' && <MedicationsSection meds={meds} onChange={loadAll} />}
-      {!loading && section === 'labs' && <LabsSection labs={labs} onChange={loadAll} />}
+      <ExportSection profile={profile} logs={logs} />
     </div>
   );
 }
-
 // ---------- Body Scans (DEXA, InBody, Hume) ----------
 function bodyscansSection({ scans, unit, onChange }) {
   const [adding, setAdding] = useState(false);
