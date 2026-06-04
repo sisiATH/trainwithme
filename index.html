@@ -5125,97 +5125,179 @@ function HealthLogView({ profile, logs }) {
   );
 }
 // ---------- Body Scans (DEXA, InBody, Hume) ----------
-function bodyscansSection({ scans, unit, onChange }) {
+function BodyScansSection({ scans, unit, onChange }) {
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState(null);
+
   return (
     <>
       <div className="card" style={{ marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
           <div>
             <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Body composition scans</h3>
-            <p style={{ fontSize: 13, color: 'var(--text-mute)' }}>DEXA, InBody, Hume — your milestone measurements. Compare across scans to see real body comp change.</p>
+            <p style={{ fontSize: 13, color: 'var(--text-mute)' }}>
+              DEXA, InBody, Hume — your milestone measurements. Compare across scans to see real body comp change.
+            </p>
           </div>
-          {!adding && <button onClick={() => setAdding(true)} className="btn" style={{ padding: '8px 16px', fontSize: 13 }}>+ Add scan</button>}
+          {!adding && !editing && (
+            <button onClick={() => setAdding(true)} className="btn" style={{ padding: '8px 16px', fontSize: 13 }}>
+              + Add scan
+            </button>
+          )}
         </div>
-        {adding && <bodyscanForm unit={unit} onSave={async () => { setAdding(false); onChange(); }} onCancel={() => setAdding(false)} />}
+
+        {adding && (
+          <BodyScanForm
+            unit={unit}
+            onSave={async () => {
+              setAdding(false);
+              onChange();
+            }}
+            onCancel={() => setAdding(false)}
+          />
+        )}
+
+        {editing && (
+          <BodyScanForm
+            unit={unit}
+            scan={editing}
+            onSave={async () => {
+              setEditing(null);
+              onChange();
+            }}
+            onCancel={() => setEditing(null)}
+          />
+        )}
       </div>
 
-      {scans.length === 0 && !adding && (
-        <div className="card"><p style={{ fontSize: 13, color: 'var(--text-mute)' }}>No scans logged yet. Add your first DEXA or body comp scan above.</p></div>
+      {scans.length === 0 && !adding && !editing && (
+        <div className="card">
+          <p style={{ fontSize: 13, color: 'var(--text-mute)' }}>
+            No scans logged yet. Add your first DEXA or body comp scan above.
+          </p>
+        </div>
       )}
 
       {scans.map((scan, i) => {
         const prev = scans[i + 1];
         return (
-          <div key={scan.id} className="card" style={{ marginBottom: 12 }}>
+          <div
+            key={scan.id}
+            className="card"
+            style={{ marginBottom: 12, cursor: 'pointer' }}
+            onClick={() => setEditing(scan)}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
               <div>
-                <div style={{ fontSize: 15, fontWeight: 700 }}>{scan.scan_type || 'Scan'} · {scan.scan_date}</div>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>
+                  {scan.scantype || 'Scan'} · {scan.scandate}
+                </div>
               </div>
-              <button onClick={async () => { if (confirm('Delete this scan?')) { await db.from('bodyscans').delete().eq('id', scan.id); onChange(); } }} style={{ background: 'transparent', border: 'none', color: 'var(--text-faint)', fontSize: 12, cursor: 'pointer' }}>Delete</button>
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  if (confirm('Delete this scan?')) {
+                    const { error } = await db.from('body_scans').delete().eq('id', scan.id);
+                    if (error) {
+                      alert(error.message);
+                      return;
+                    }
+                    onChange();
+                  }
+                }}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-faint)', fontSize: 12, cursor: 'pointer' }}
+              >
+                Delete
+              </button>
             </div>
+
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
-             <ScanMetric
-  label="Weight"
-  value={scan.weightkg}
-  prev={prev?.weightkg}
-  unit={weightUnit(unit)}
-  convert={v => toDisplayWeight(v, unit)}
-/>
+              <ScanMetric
+                label="Weight"
+                value={scan.weightkg}
+                prev={prev?.weightkg}
+                unit={weightUnit(unit)}
+                convert={v => toDisplayWeight(v, unit)}
+              />
 
-<ScanMetric
-  label="Body fat"
-  value={scan.bodyfatpct}
-  prev={prev?.bodyfatpct}
-  unit="%"
-  lowerBetter
-/>
+              <ScanMetric
+                label="Body fat"
+                value={scan.bodyfatpct}
+                prev={prev?.bodyfatpct}
+                unit="%"
+                lowerBetter
+              />
 
-<ScanMetric
-  label="Lean mass"
-  value={scan.leanmasskg}
-  prev={prev?.leanmasskg}
-  unit={weightUnit(unit)}
-  convert={v => toDisplayWeight(v, unit)}
-  higherBetter
-/>
+              <ScanMetric
+                label="Lean mass"
+                value={scan.leanmasskg}
+                prev={prev?.leanmasskg}
+                unit={weightUnit(unit)}
+                convert={v => toDisplayWeight(v, unit)}
+                higherBetter
+              />
 
-<ScanMetric
-  label="Fat mass"
-  value={scan.fatmasskg}
-  prev={prev?.fatmasskg}
-  unit={weightUnit(unit)}
-  convert={v => toDisplayWeight(v, unit)}
-  lowerBetter
-/>
+              <ScanMetric
+                label="Fat mass"
+                value={scan.fatmasskg}
+                prev={prev?.fatmasskg}
+                unit={weightUnit(unit)}
+                convert={v => toDisplayWeight(v, unit)}
+                lowerBetter
+              />
 
-<ScanMetric
-  label="Visceral fat"
-  value={scan.visceralfat}
-  prev={prev?.visceralfat}
-  lowerBetter
-/>
+              <ScanMetric
+                label="Visceral fat"
+                value={scan.visceralfat}
+                prev={prev?.visceralfat}
+                lowerBetter
+              />
 
-{scan.scantype === 'DEXA' && (
-  <ScanMetric
-    label="Bone density"
-    value={scan.bonedensity}
-    prev={prev?.bonedensity}
-    higherBetter
-  />
-)}
+              {scan.scantype === 'DEXA' && (
+                <ScanMetric
+                  label="Bone density"
+                  value={scan.bonedensity}
+                  prev={prev?.bonedensity}
+                  higherBetter
+                />
+              )}
 
-{scan.scantype === 'InBody' && (
-  <ScanMetric
-    label="ECW/TBW"
-    value={scan.ecwtbw}
-    prev={prev?.ecwtbw}
-    unit="%"
-    lowerBetter
-  />
-)}
+              {scan.scantype === 'InBody' && (
+                <ScanMetric
+                  label="ECW/TBW"
+                  value={scan.ecwtbw}
+                  prev={prev?.ecwtbw}
+                  unit="%"
+                  lowerBetter
+                />
+              )}
+
+              {scan.androidfatpct != null && (
+                <ScanMetric
+                  label="Android fat"
+                  value={scan.androidfatpct}
+                  prev={prev?.androidfatpct}
+                  unit="%"
+                  lowerBetter
+                />
+              )}
+
+              {scan.gynoidfatpct != null && (
+                <ScanMetric
+                  label="Gynoid fat"
+                  value={scan.gynoidfatpct}
+                  prev={prev?.gynoidfatpct}
+                  unit="%"
+                  lowerBetter
+                />
+              )}
             </div>
-            {scan.notes && <p style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 12, lineHeight: 1.5, fontStyle: 'italic' }}>{scan.notes}</p>}
+
+            {scan.notes && (
+              <p style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 12, lineHeight: 1.5, fontStyle: 'italic' }}>
+                {scan.notes}
+              </p>
+            )}
           </div>
         );
       })}
@@ -5246,19 +5328,20 @@ function ScanMetric({ label, value, prev, unit = '', convert, higherBetter, lowe
   );
 }
 
-function bodyscanForm({ unit, onSave, onCancel }) {
-  const [date, setDate] = useState(ymd(today()));
-  const [type, setType] = useState('InBody');
-  const [w, setW] = useState('');
-  const [bf, setBf] = useState('');
-  const [lean, setLean] = useState('');
-  const [fat, setFat] = useState('');
-  const [visc, setVisc] = useState('');
-  const [bone, setBone] = useState('');
-  const [ecwTbw, setEcwTbw] = useState('');
-  const [android, setAndroid] = useState('');
-  const [gynoid, setGynoid] = useState('');
-  const [notes, setNotes] = useState('');
+function BodyScanForm({ unit, scan = null, onSave, onCancel }) {
+  const editing = !!scan;
+  const [date, setDate] = useState(scan?.scandate || ymd(today()));
+  const [type, setType] = useState(scan?.scantype || 'InBody');
+  const [w, setW] = useState(scan?.weightkg != null ? toDisplayWeight(scan.weightkg, unit) : '');
+  const [bf, setBf] = useState(scan?.bodyfatpct ?? '');
+  const [lean, setLean] = useState(scan?.leanmasskg != null ? toDisplayWeight(scan.leanmasskg, unit) : '');
+  const [fat, setFat] = useState(scan?.fatmasskg != null ? toDisplayWeight(scan.fatmasskg, unit) : '');
+  const [visc, setVisc] = useState(scan?.visceralfat ?? '');
+  const [bone, setBone] = useState(scan?.bonedensity ?? '');
+  const [ecwTbw, setEcwTbw] = useState(scan?.ecwtbw ?? '');
+  const [android, setAndroid] = useState(scan?.androidfatpct ?? '');
+  const [gynoid, setGynoid] = useState(scan?.gynoidfatpct ?? '');
+  const [notes, setNotes] = useState(scan?.notes || '');
   const [saving, setSaving] = useState(false);
 
   const isDexa = type === 'DEXA';
@@ -5268,7 +5351,8 @@ function bodyscanForm({ unit, onSave, onCancel }) {
     setSaving(true);
     const { data: { user } } = await db.auth.getUser();
 
-    await db.from('bodyscans').insert({
+    const row = {
+      id: scan?.id,
       userid: user.id,
       scandate: date,
       scantype: type,
@@ -5279,423 +5363,7 @@ function bodyscanForm({ unit, onSave, onCancel }) {
       visceralfat: visc ? Number(visc) : null,
       bonedensity: isDexa && bone ? Number(bone) : null,
       ecwtbw: isInBody && ecwTbw ? Number(ecwTbw) : null,
-      androidfatpct: isDexa && android ? Number(android) : null,
-      gynoidfatpct: isDexa && gynoid ? Number(gynoid) : null,
-      notes: notes || null,
-    });
-
-    setSaving(false);
-    onSave();
-  }
-
-  return (
-    <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: 16, marginTop: 12 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 12 }}>
-        <div>
-          <div className="field-label">Date</div>
-          <input type="date" className="input" value={date} onChange={e => setDate(e.target.value)} />
-        </div>
-
-        <div>
-          <div className="field-label">Scan type</div>
-          <select className="input" value={type} onChange={e => setType(e.target.value)}>
-            <option>DEXA</option>
-            <option>InBody</option>
-            <option>Hume</option>
-            <option>Other</option>
-          </select>
-        </div>
-
-        <div>
-          <div className="field-label">Weight ({weightUnit(unit)})</div>
-          <input type="number" step="0.1" className="input" value={w} onChange={e => setW(e.target.value)} />
-        </div>
-
-        <div>
-          <div className="field-label">Body fat %</div>
-          <input type="number" step="0.1" className="input" value={bf} onChange={e => setBf(e.target.value)} />
-        </div>
-
-        <div>
-          <div className="field-label">Lean mass ({weightUnit(unit)})</div>
-          <input type="number" step="0.1" className="input" value={lean} onChange={e => setLean(e.target.value)} />
-        </div>
-
-        <div>
-          <div className="field-label">Fat mass ({weightUnit(unit)})</div>
-          <input type="number" step="0.1" className="input" value={fat} onChange={e => setFat(e.target.value)} />
-        </div>
-
-        <div>
-          <div className="field-label">Visceral fat</div>
-          <input type="number" step="0.1" className="input" value={visc} onChange={e => setVisc(e.target.value)} />
-        </div>
-
-        {isDexa && (
-          <div>
-            <div className="field-label">Bone density</div>
-            <input type="number" step="0.01" className="input" value={bone} onChange={e => setBone(e.target.value)} />
-          </div>
-        )}
-
-        {isInBody && (
-          <div>
-            <div className="field-label">ECW/TBW %</div>
-            <input
-              type="number"
-              step="0.1"
-              className="input"
-              value={ecwTbw}
-              onChange={e => setEcwTbw(e.target.value)}
-              placeholder="e.g. 45.3"
-            />
-          </div>
-        )}
-
-        {isDexa && (
-          <>
-            <div>
-              <div className="field-label">Android fat %</div>
-              <input type="number" step="0.1" className="input" value={android} onChange={e => setAndroid(e.target.value)} />
-            </div>
-
-            <div>
-              <div className="field-label">Gynoid fat %</div>
-              <input type="number" step="0.1" className="input" value={gynoid} onChange={e => setGynoid(e.target.value)} />
-            </div>
-          </>
-        )}
-      </div>
-
-      {isInBody && (
-        <p style={{ fontSize: 12, color: 'var(--text-mute)', marginBottom: 12, lineHeight: 1.5 }}>
-          ECW/TBW helps flag fluid balance and water retention patterns. Useful when weight is up but body fat is unchanged.
-        </p>
-      )}
-
-      <div>
-        <div className="field-label">Notes</div>
-        <textarea
-          className="input"
-          rows={2}
-          value={notes}
-          onChange={e => setNotes(e.target.value)}
-          placeholder="Anything to remember from this scan"
-        />
-      </div>
-
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-        <button onClick={onCancel} className="btn-ghost" style={{ padding: '8px 16px', fontSize: 13 }}>Cancel</button>
-        <button onClick={save} className="btn" style={{ padding: '8px 16px', fontSize: 13 }} disabled={saving}>
-          {saving ? 'Saving...' : 'Save scan'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function SymptomsForm({ onSave, onCancel }) {
-  const [date, setDate] = useState(ymd(today()));
-  const [hotFlashes, setHotFlashes] = useState('');
-  const [nightSweats, setNightSweats] = useState(false);
-  const [brainFog, setBrainFog] = useState('');
-  const [jointPain, setJointPain] = useState('');
-  const [moodSwings, setMoodSwings] = useState('');
-  const [anxiety, setAnxiety] = useState('');
-  const [bloating, setBloating] = useState('');
-  const [headache, setHeadache] = useState(false);
-  const [notes, setNotes] = useState('');
-  const [saving, setSaving] = useState(false);
-  async function save() {
-    setSaving(true);
-    const { data: { user } } = await db.auth.getUser();
-    await db.from('symptoms').upsert({
-      user_id: user.id,
-      date,
-      hot_flashes: hotFlashes ? Number(hotFlashes) : null,
-      night_sweats: nightSweats,
-      brain_fog: brainFog ? Number(brainFog) : null,
-      joint_pain: jointPain ? Number(jointPain) : null,
-      mood_swings: moodSwings ? Number(moodSwings) : null,
-      anxiety: anxiety ? Number(anxiety) : null,
-      bloating: bloating ? Number(bloating) : null,
-      headache,
-      notes: notes || null,
-    }, { onConflict: 'user_id,date' });
-    setSaving(false);
-    onSave();
-  }
-  return (
-    <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: 16, marginTop: 12 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 12 }}>
-        <div><div className="field-label">Date</div><input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} /></div>
-        <div><div className="field-label">Hot flashes (count)</div><input type="number" min="0" className="input" value={hotFlashes} onChange={(e) => setHotFlashes(e.target.value)} /></div>
-        <div><div className="field-label">Brain fog (0-5)</div><input type="number" min="0" max="5" className="input" value={brainFog} onChange={(e) => setBrainFog(e.target.value)} /></div>
-        <div><div className="field-label">Joint pain (0-5)</div><input type="number" min="0" max="5" className="input" value={jointPain} onChange={(e) => setJointPain(e.target.value)} /></div>
-        <div><div className="field-label">Mood swings (0-5)</div><input type="number" min="0" max="5" className="input" value={moodSwings} onChange={(e) => setMoodSwings(e.target.value)} /></div>
-        <div><div className="field-label">Anxiety (0-5)</div><input type="number" min="0" max="5" className="input" value={anxiety} onChange={(e) => setAnxiety(e.target.value)} /></div>
-        <div><div className="field-label">Bloating (0-5)</div><input type="number" min="0" max="5" className="input" value={bloating} onChange={(e) => setBloating(e.target.value)} /></div>
-      </div>
-      <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
-        <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer' }}>
-          <input type="checkbox" checked={nightSweats} onChange={(e) => setNightSweats(e.target.checked)} style={{ accentColor: 'var(--teal)' }} />
-          <span style={{ fontSize: 13 }}>Night sweats</span>
-        </label>
-        <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer' }}>
-          <input type="checkbox" checked={headache} onChange={(e) => setHeadache(e.target.checked)} style={{ accentColor: 'var(--teal)' }} />
-          <span style={{ fontSize: 13 }}>Headache</span>
-        </label>
-      </div>
-      <div><div className="field-label">Notes</div><textarea className="input" rows="2" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Anything else worth noting" /></div>
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-        <button onClick={onCancel} className="btn-ghost" style={{ padding: '8px 16px', fontSize: 13 }}>Cancel</button>
-        <button onClick={save} disabled={saving} className="btn" style={{ padding: '8px 16px', fontSize: 13 }}>{saving ? 'Saving…' : 'Save'}</button>
-      </div>
-    </div>
-  );
-}
-
-// ---------- Medications ----------
-function MedicationsSection({ meds, onChange }) {
-  const [adding, setAdding] = useState(false);
-  const active = meds.filter(m => !m.end_date);
-  const past = meds.filter(m => m.end_date);
-  return (
-    <>
-      <div className="card" style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-          <div>
-            <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Medications & supplements</h3>
-            <p style={{ fontSize: 13, color: 'var(--text-mute)' }}>HRT, supplements, anything you're taking regularly. Helps practitioners spot timing-related changes.</p>
-          </div>
-          {!adding && <button onClick={() => setAdding(true)} className="btn" style={{ padding: '8px 16px', fontSize: 13 }}>+ Add</button>}
-        </div>
-        {adding && <MedicationForm onSave={() => { setAdding(false); onChange(); }} onCancel={() => setAdding(false)} />}
-      </div>
-
-      {meds.length === 0 && !adding && (
-        <div className="card"><p style={{ fontSize: 13, color: 'var(--text-mute)' }}>Nothing logged yet.</p></div>
-      )}
-
-      {active.length > 0 && (
-        <div style={{ marginBottom: 14 }}>
-          <div className="label" style={{ marginBottom: 8 }}>Currently taking</div>
-          {active.map(m => <MedRow key={m.id} med={m} onChange={onChange} />)}
-        </div>
-      )}
-      {past.length > 0 && (
-        <div>
-          <div className="label" style={{ marginBottom: 8 }}>Past</div>
-          {past.map(m => <MedRow key={m.id} med={m} onChange={onChange} />)}
-        </div>
-      )}
-    </>
-  );
-}
-
-function MedRow({ med, onChange }) {
-  return (
-    <div className="card" style={{ marginBottom: 10, padding: 14 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>{med.name} {med.dose && <span style={{ color: 'var(--text-mute)', fontWeight: 400 }}>· {med.dose}</span>}</div>
-          <div style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 4 }}>
-            {med.category && `${med.category} · `}
-            {med.start_date ? `Started ${med.start_date}` : ''}
-            {med.end_date ? ` · Ended ${med.end_date}` : ''}
-          </div>
-          {med.notes && <p style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 6, fontStyle: 'italic' }}>{med.notes}</p>}
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {!med.end_date && (
-            <button onClick={async () => { await db.from('medications').update({ end_date: ymd(today()) }).eq('id', med.id); onChange(); }} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: 'var(--text-mute)' }}>Mark ended</button>
-          )}
-          <button onClick={async () => { if (confirm('Delete?')) { await db.from('medications').delete().eq('id', med.id); onChange(); } }} style={{ background: 'transparent', border: 'none', color: 'var(--text-faint)', fontSize: 11, cursor: 'pointer' }}>Delete</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MedicationForm({ onSave, onCancel }) {
-  const [name, setName] = useState('');
-  const [dose, setDose] = useState('');
-  const [category, setCategory] = useState('Supplement');
-  const [startDate, setStartDate] = useState(ymd(today()));
-  const [notes, setNotes] = useState('');
-  const [saving, setSaving] = useState(false);
-  async function save() {
-    if (!name) return;
-    setSaving(true);
-    const { data: { user } } = await db.auth.getUser();
-    await db.from('medications').insert({
-      user_id: user.id,
-      name,
-      dose: dose || null,
-      category,
-      start_date: startDate || null,
-      notes: notes || null,
-    });
-    setSaving(false);
-    onSave();
-  }
-  return (
-    <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: 16, marginTop: 12 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 12 }}>
-        <div><div className="field-label">Name *</div><input type="text" className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Estradiol patch" /></div>
-        <div><div className="field-label">Dose</div><input type="text" className="input" value={dose} onChange={(e) => setDose(e.target.value)} placeholder="e.g. 50mcg" /></div>
-        <div><div className="field-label">Category</div>
-          <select className="input" value={category} onChange={(e) => setCategory(e.target.value)}>
-            <option>HRT</option><option>Supplement</option><option>Prescription</option><option>Other</option>
-          </select>
-        </div>
-        <div><div className="field-label">Start date</div><input type="date" className="input" value={startDate} onChange={(e) => setStartDate(e.target.value)} /></div>
-      </div>
-      <div><div className="field-label">Notes</div><textarea className="input" rows="2" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Prescribed by, timing, anything to remember" /></div>
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-        <button onClick={onCancel} className="btn-ghost" style={{ padding: '8px 16px', fontSize: 13 }}>Cancel</button>
-        <button onClick={save} disabled={saving || !name} className="btn" style={{ padding: '8px 16px', fontSize: 13 }}>{saving ? 'Saving…' : 'Save'}</button>
-      </div>
-    </div>
-  );
-}
-
-// ---------- Lab Values ----------
-const COMMON_LABS = [
-  { marker: 'Estradiol', unit: 'pg/mL' },
-  { marker: 'Progesterone', unit: 'ng/mL' },
-  { marker: 'Testosterone', unit: 'ng/dL' },
-  { marker: 'FSH', unit: 'mIU/mL' },
-  { marker: 'LH', unit: 'mIU/mL' },
-  { marker: 'TSH', unit: 'mIU/L' },
-  { marker: 'Free T4', unit: 'ng/dL' },
-  { marker: 'Cortisol', unit: 'mcg/dL' },
-  { marker: 'Vitamin D', unit: 'ng/mL' },
-  { marker: 'Ferritin', unit: 'ng/mL' },
-  { marker: 'Vitamin B12', unit: 'pg/mL' },
-  { marker: 'Fasting glucose', unit: 'mg/dL' },
-  { marker: 'HbA1c', unit: '%' },
-  { marker: 'Insulin', unit: 'mIU/L' },
-  { marker: 'Total cholesterol', unit: 'mg/dL' },
-  { marker: 'LDL', unit: 'mg/dL' },
-  { marker: 'HDL', unit: 'mg/dL' },
-  { marker: 'Triglycerides', unit: 'mg/dL' },
-  { marker: 'CRP', unit: 'mg/L' },
-];
-
-function LabsSection({ labs, onChange }) {
-  const [adding, setAdding] = useState(false);
-  // Group by date
-  const byDate = {};
-  for (const l of labs) {
-    if (!byDate[l.test_date]) byDate[l.test_date] = [];
-    byDate[l.test_date].push(l);
-  }
-  const dates = Object.keys(byDate).sort((a, b) => b.localeCompare(a));
-  return (
-    <>
-      <div className="card" style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-          <div>
-            <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Lab results</h3>
-            <p style={{ fontSize: 13, color: 'var(--text-mute)' }}>Blood work over time. Practitioners use these to spot patterns and adjust protocols.</p>
-          </div>
-          {!adding && <button onClick={() => setAdding(true)} className="btn" style={{ padding: '8px 16px', fontSize: 13 }}>+ Add lab</button>}
-        </div>
-        {adding && <LabForm onSave={() => { setAdding(false); onChange(); }} onCancel={() => setAdding(false)} />}
-      </div>
-
-      {labs.length === 0 && !adding && (
-        <div className="card"><p style={{ fontSize: 13, color: 'var(--text-mute)' }}>No labs logged yet.</p></div>
-      )}
-
-      {dates.map(date => (
-        <div key={date} className="card" style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>{date}</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {byDate[date].map(l => {
-              const inRange = (l.reference_low !== null && l.reference_high !== null)
-                ? (l.value >= l.reference_low && l.value <= l.reference_high)
-                : null;
-              return (
-                <div key={l.id} style={{ display: 'flex', alignItems: 'baseline', gap: 10, fontSize: 13, paddingBottom: 6, borderBottom: '1px dashed var(--divider)' }}>
-                  <span style={{ flex: 1, fontWeight: 500 }}>{l.marker}</span>
-                  <span style={{ fontWeight: 700, color: inRange === false ? 'var(--pink)' : 'var(--text)' }}>{l.value} {l.unit}</span>
-                  {l.reference_low !== null && l.reference_high !== null && (
-                    <span style={{ fontSize: 11, color: 'var(--text-faint)', minWidth: 90, textAlign: 'right' }}>({l.reference_low}–{l.reference_high})</span>
-                  )}
-                  <button onClick={async () => { if (confirm('Delete?')) { await db.from('labs').delete().eq('id', l.id); onChange(); } }} style={{ background: 'transparent', border: 'none', color: 'var(--text-faint)', fontSize: 11, cursor: 'pointer' }}>×</button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-    </>
-  );
-}
-
-function LabForm({ onSave, onCancel }) {
-  const [date, setDate] = useState(ymd(today()));
-  const [rows, setRows] = useState([{ marker: '', value: '', unit: '', refLow: '', refHigh: '' }]);
-  const [saving, setSaving] = useState(false);
-  function updateRow(i, field, val) {
-    const next = [...rows];
-    next[i] = { ...next[i], [field]: val };
-    // Auto-fill unit when marker selected
-    if (field === 'marker') {
-      const found = COMMON_LABS.find(c => c.marker === val);
-      if (found) next[i].unit = found.unit;
-    }
-    setRows(next);
-  }
-  async function save() {
-    const valid = rows.filter(r => r.marker && r.value);
-    if (!valid.length) return;
-    setSaving(true);
-    const { data: { user } } = await db.auth.getUser();
-    await db.from('labs').insert(valid.map(r => ({
-      user_id: user.id,
-      test_date: date,
-      marker: r.marker,
-      value: Number(r.value),
-      unit: r.unit || null,
-      reference_low: r.refLow ? Number(r.refLow) : null,
-      reference_high: r.refHigh ? Number(r.refHigh) : null,
-    })));
-    setSaving(false);
-    onSave();
-  }
-  return (
-    <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: 16, marginTop: 12 }}>
-      <div style={{ marginBottom: 12 }}>
-        <div className="field-label">Test date</div>
-        <input type="date" className="input" style={{ maxWidth: 200 }} value={date} onChange={(e) => setDate(e.target.value)} />
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
-        {rows.map((r, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.5fr 0.8fr 0.8fr 0.7fr 0.7fr 28px', gap: 8 }}>
-            <input list="lab-markers" placeholder="Marker" className="input" value={r.marker} onChange={(e) => updateRow(i, 'marker', e.target.value)} />
-            <input type="number" step="0.01" placeholder="Value" className="input" value={r.value} onChange={(e) => updateRow(i, 'value', e.target.value)} />
-            <input type="text" placeholder="Unit" className="input" value={r.unit} onChange={(e) => updateRow(i, 'unit', e.target.value)} />
-            <input type="number" step="0.01" placeholder="Ref low" className="input" value={r.refLow} onChange={(e) => updateRow(i, 'refLow', e.target.value)} />
-            <input type="number" step="0.01" placeholder="Ref high" className="input" value={r.refHigh} onChange={(e) => updateRow(i, 'refHigh', e.target.value)} />
-            <button onClick={() => setRows(rows.filter((_, j) => j !== i))} style={{ background: 'transparent', border: 'none', color: 'var(--text-faint)', fontSize: 16, cursor: 'pointer' }}>×</button>
-          </div>
-        ))}
-        <datalist id="lab-markers">
-          {COMMON_LABS.map(c => <option key={c.marker} value={c.marker} />)}
-        </datalist>
-      </div>
-      <button onClick={() => setRows([...rows, { marker: '', value: '', unit: '', refLow: '', refHigh: '' }])} className="btn-ghost" style={{ padding: '6px 12px', fontSize: 12 }}>+ Add another marker</button>
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-        <button onClick={onCancel} className="btn-ghost" style={{ padding: '8px 16px', fontSize: 13 }}>Cancel</button>
-        <button onClick={save} disabled={saving} className="btn" style={{ padding: '8px 16px', fontSize: 13 }}>{saving ? 'Saving…' : 'Save labs'}</button>
-      </div>
-    </div>
-  );
-}
-
+      androidfatpct: isDexa && 
 // ============================================================
 // APP ROOT
 // ============================================================
