@@ -3091,12 +3091,13 @@ function CycleInsights({ profile, logs }) {
   const unit = profile.unit_system || 'kg';
   let cycleDay = null;
   let phase = null;
+
   if (profile.track_cycle && profile.last_period_start) {
-    const days = daysBetween(parseYMD(profile.lastperiodstart), today());
-if (days >= 0) cycleDay = days + 1;
-phase = calcPhase(cycleDay, profile.cyclelength, profile.periodlength);
-    }
+    const days = daysBetween(parseYMD(profile.last_period_start), today());
+    if (days >= 0) cycleDay = days + 1;
+    phase = calcPhase(cycleDay, profile.cycle_length, profile.period_length);
   }
+
   const guide = phase ? PHASE_GUIDANCE[phase] : null;
 
   // Phase averages (find which phase you do best in)
