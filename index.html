@@ -192,7 +192,6 @@ const fromDisplayWater = (val, unit) => {
 
 function calcPhase(cycleDay, cycleLength, periodLength) {
   if (!cycleDay || !cycleLength) return null;
-  // If past expected end of cycle, stay in Luteal until period logged
   if (cycleDay > cycleLength) return 'Luteal';
   if (cycleDay <= (periodLength || 5)) return 'Menstrual';
   const foll = Math.round(cycleLength * 0.45);
@@ -3093,10 +3092,9 @@ function CycleInsights({ profile, logs }) {
   let cycleDay = null;
   let phase = null;
   if (profile.track_cycle && profile.last_period_start) {
-    const days = daysBetween(parseYMD(profile.last_period_start), today());
-    if (days >= 0) {
-      cycleDay = (days % (profile.cycle_length || 28)) + 1;
-      phase = calcPhase(cycleDay, profile.cycle_length, profile.period_length);
+    const days = daysBetween(parseYMD(profile.lastperiodstart), today());
+if (days >= 0) cycleDay = days + 1;
+phase = calcPhase(cycleDay, profile.cyclelength, profile.periodlength);
     }
   }
   const guide = phase ? PHASE_GUIDANCE[phase] : null;
