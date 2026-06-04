@@ -4742,7 +4742,43 @@ function GoalProgressBar({ label, current, target, unit = '', higherIsBetter = f
     <div className="fade-in">
       <h1 className="page-title">Insights</h1>
       <p className="page-sub">Your data, analysed. Pick a time scope or ask a specific question.</p>
-
+function exportCSV(logs, profile, dateFrom, dateTo) {
+  const unit = profile.unit_system || 'kg';
+  const filtered = logs.filter(l => l.date >= dateFrom && l.date <= dateTo).sort((a,b) => a.date.localeCompare(b.date));
+  const headers = ['date','weight','body_fat_pct','muscle','body_water_pct','hrv','rhr','sleep_hours','sleep_quality','steps','calories_in','calories_out','protein_g','carbs_g','fat_g','fibre_g','water_l','mood','stress','alcohol_units','caffeine_mg','notes'];
+  const rows = filtered.map(l => [
+    l.date,
+    l.weight_kg ? toDisplayWeight(l.weight_kg, unit) : '',
+    l.body_fat_pct ?? '',
+    l.muscle_kg ? toDisplayWeight(l.muscle_kg, unit) : '',
+    l.body_water_pct ?? '',
+    l.hrv ?? '',
+    l.rhr ?? '',
+    l.sleep_hours ?? '',
+    l.sleep_quality ?? '',
+    l.steps ?? '',
+    l.calories_in ?? '',
+    l.calories_out ?? '',
+    l.protein_g ?? '',
+    l.carbs_g ?? '',
+    l.fat_g ?? '',
+    l.fibre_g ?? '',
+    l.water_l ?? '',
+    l.mood ?? '',
+    l.stress ?? '',
+    l.alcohol_units ?? '',
+    l.caffeine_mg ?? '',
+    (l.notes || '').replace(/,/g, ' '),
+  ]);
+  const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `train-with-me-${dateFrom}-to-${dateTo}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
       <ExportSection profile={profile} logs={logs} />
 
       {/* Mode toggle */}
