@@ -4710,39 +4710,7 @@ function GoalProgressBar({ label, current, target, unit = '', higherIsBetter = f
     </div>
   );
 }
-  function CoachView({ profile, logs }) {
-  const unit = profile.unit_system || 'kg';
-  const [mode, setMode] = useState('week');
-  const [selectedGoal, setSelectedGoal] = useState(null);
-
-  // Get scoped logs for retrospective modes
-  const scopedLogs = useMemo(() => {
-    if (mode === 'all' || mode === 'goals') return logs;
-    const days = mode === 'week' ? 7 : 30;
-    const cutoff = ymd(new Date(today().getTime() - days * 86400000));
-    return logs.filter(l => l.date >= cutoff);
-  }, [logs, mode]);
-
-  const label = mode === 'week' ? 'this week' : mode === 'month' ? 'this month' : 'overall';
-  const diagnosis = useMemo(() => mode === 'goals' ? [] : diagnoseRange(scopedLogs, profile, label), [scopedLogs, profile, label, mode]);
-  const scorecard = useMemo(() => behaviourScorecard(logs, profile), [logs, profile]);
-  const allInsights = useMemo(() => generateInsights(logs, profile), [logs, profile]);
-  const general = {
-    gaps: allInsights.gaps.filter(it => it.scope !== 'body'),
-    wins: allInsights.wins.filter(it => it.scope !== 'body'),
-    stalls: allInsights.stalls.filter(it => it.scope !== 'body'),
-    cycle: allInsights.cycle.filter(it => it.scope !== 'body'),
-  };
-
-  const wins = diagnosis.filter(d => d.tone === 'good');
-  const blocks = diagnosis.filter(d => d.tone === 'warn');
-  const neutral = diagnosis.filter(d => d.tone === 'neutral' || d.tone === 'info');
-
-  return (
-    <div className="fade-in">
-      <h1 className="page-title">Insights</h1>
-      <p className="page-sub">Your data, analysed. Pick a time scope or ask a specific question.</p>
-function exportCSV(logs, profile, dateFrom, dateTo) {
+   function exportCSV(logs, profile, dateFrom, dateTo) {
   const unit = profile.unit_system || 'kg';
   const filtered = logs.filter(l => l.date >= dateFrom && l.date <= dateTo).sort((a,b) => a.date.localeCompare(b.date));
   const headers = ['date','weight','body_fat_pct','muscle','body_water_pct','hrv','rhr','sleep_hours','sleep_quality','steps','calories_in','calories_out','protein_g','carbs_g','fat_g','fibre_g','water_l','mood','stress','alcohol_units','caffeine_mg','notes'];
@@ -4779,6 +4747,39 @@ function exportCSV(logs, profile, dateFrom, dateTo) {
   a.click();
   URL.revokeObjectURL(url);
 }
+  function CoachView({ profile, logs }) {
+  const unit = profile.unit_system || 'kg';
+  const [mode, setMode] = useState('week');
+  const [selectedGoal, setSelectedGoal] = useState(null);
+
+  // Get scoped logs for retrospective modes
+  const scopedLogs = useMemo(() => {
+    if (mode === 'all' || mode === 'goals') return logs;
+    const days = mode === 'week' ? 7 : 30;
+    const cutoff = ymd(new Date(today().getTime() - days * 86400000));
+    return logs.filter(l => l.date >= cutoff);
+  }, [logs, mode]);
+
+  const label = mode === 'week' ? 'this week' : mode === 'month' ? 'this month' : 'overall';
+  const diagnosis = useMemo(() => mode === 'goals' ? [] : diagnoseRange(scopedLogs, profile, label), [scopedLogs, profile, label, mode]);
+  const scorecard = useMemo(() => behaviourScorecard(logs, profile), [logs, profile]);
+  const allInsights = useMemo(() => generateInsights(logs, profile), [logs, profile]);
+  const general = {
+    gaps: allInsights.gaps.filter(it => it.scope !== 'body'),
+    wins: allInsights.wins.filter(it => it.scope !== 'body'),
+    stalls: allInsights.stalls.filter(it => it.scope !== 'body'),
+    cycle: allInsights.cycle.filter(it => it.scope !== 'body'),
+  };
+
+  const wins = diagnosis.filter(d => d.tone === 'good');
+  const blocks = diagnosis.filter(d => d.tone === 'warn');
+  const neutral = diagnosis.filter(d => d.tone === 'neutral' || d.tone === 'info');
+
+  return (
+    <div className="fade-in">
+      <h1 className="page-title">Insights</h1>
+      <p className="page-sub">Your data, analysed. Pick a time scope or ask a specific question.</p>
+
       <ExportSection profile={profile} logs={logs} />
 
       {/* Mode toggle */}
