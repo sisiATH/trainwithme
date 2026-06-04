@@ -5047,7 +5047,7 @@ function HealthLogView({ profile }) {
 
       {loading && <div className="card"><p style={{ fontSize: 13, color: 'var(--text-mute)' }}>Loading…</p></div>}
 
-      {!loading && section === 'scans' && <BodyScansSection scans={scans} unit={unit} onChange={loadAll} />}
+      {!loading && section === 'scans' && <body_scansSection scans={scans} unit={unit} onChange={loadAll} />}
       {!loading && section === 'symptoms' && <SymptomsSection symptoms={symptoms} onChange={loadAll} />}
       {!loading && section === 'meds' && <MedicationsSection meds={meds} onChange={loadAll} />}
       {!loading && section === 'labs' && <LabsSection labs={labs} onChange={loadAll} />}
@@ -5056,7 +5056,7 @@ function HealthLogView({ profile }) {
 }
 
 // ---------- Body Scans (DEXA, InBody, Hume) ----------
-function BodyScansSection({ scans, unit, onChange }) {
+function body_scansSection({ scans, unit, onChange }) {
   const [adding, setAdding] = useState(false);
   return (
     <>
@@ -5068,7 +5068,7 @@ function BodyScansSection({ scans, unit, onChange }) {
           </div>
           {!adding && <button onClick={() => setAdding(true)} className="btn" style={{ padding: '8px 16px', fontSize: 13 }}>+ Add scan</button>}
         </div>
-        {adding && <BodyScanForm unit={unit} onSave={async () => { setAdding(false); onChange(); }} onCancel={() => setAdding(false)} />}
+        {adding && <body_scanForm unit={unit} onSave={async () => { setAdding(false); onChange(); }} onCancel={() => setAdding(false)} />}
       </div>
 
       {scans.length === 0 && !adding && (
@@ -5177,7 +5177,7 @@ function ScanMetric({ label, value, prev, unit = '', convert, higherBetter, lowe
   );
 }
 
-function BodyScanForm({ unit, onSave, onCancel }) {
+function body_scanForm({ unit, onSave, onCancel }) {
   const [date, setDate] = useState(ymd(today()));
   const [type, setType] = useState('InBody');
   const [w, setW] = useState('');
@@ -5199,7 +5199,7 @@ function BodyScanForm({ unit, onSave, onCancel }) {
     setSaving(true);
     const { data: { user } } = await db.auth.getUser();
 
-    await db.from('bodyscans').insert({
+    await db.from('body_scans').insert({
       userid: user.id,
       scandate: date,
       scantype: type,
