@@ -4027,25 +4027,22 @@ async function fetchHealthLog(dateFrom, dateTo) {
   const [scans, symptoms, meds, labs] = await Promise.all([
     db.from('body_scans')
       .select('*')
-      .gte('scandate', dateFrom)
-      .lte('scandate', dateTo)
-      .order('scandate', { ascending: false }),
-
+      .gte('scan_date', dateFrom)
+      .lte('scan_date', dateTo)
+      .order('scan_date', { ascending: false }),
     db.from('symptoms')
       .select('*')
       .gte('date', dateFrom)
       .lte('date', dateTo)
       .order('date', { ascending: false }),
-
     db.from('medications')
       .select('*')
-      .order('startdate', { ascending: false }),
-
+      .order('start_date', { ascending: false }),
     db.from('labs')
       .select('*')
-      .gte('testdate', dateFrom)
-      .lte('testdate', dateTo)
-      .order('testdate', { ascending: false }),
+      .gte('test_date', dateFrom)
+      .lte('test_date', dateTo)
+      .order('test_date', { ascending: false }),
   ]);
 
   if (scans.error) throw scans.error;
@@ -4146,10 +4143,10 @@ async function exportPDF(logs, profile, dateFrom, dateTo) {
 
   // ---------- HEADER ----------
   doc.setFontSize(18); doc.setTextColor(0, 104, 122); doc.setFont(undefined, 'bold');
-  doc.text('Train With Me â€” Health Report', margin, y);
+  doc.text('Train With Me — Health Report', margin, y);
   y += 6;
   doc.setFontSize(10); doc.setTextColor(80); doc.setFont(undefined, 'normal');
-  doc.text(`${profile.name || ''} Â· Period: ${dateFrom} to ${dateTo} Â· Generated ${ymd(today())}`, margin, y);
+  doc.text(`${profile.name || ''} · Period: ${dateFrom} to ${dateTo} · Generated ${ymd(today())}`, margin, y);
   y += 8;
 
   // ---------- HEADLINE STATS ----------
@@ -4171,14 +4168,14 @@ async function exportPDF(logs, profile, dateFrom, dateTo) {
   doc.setFont(undefined, 'normal'); doc.setFontSize(9); doc.setTextColor(40);
   const stats = [
     ['Days logged', String(filtered.length)],
-    ['Weight change', wChange === null ? 'â€“' : `${wChange > 0 ? '+' : ''}${fmt1(toDisplayWeight(wChange, unit))} ${weightUnit(unit)}`],
-    ['Body fat change', bfChange === null ? 'â€“' : `${bfChange > 0 ? '+' : ''}${fmt1(bfChange)}%`],
-    ['Muscle change', mChange === null ? 'â€“' : `${mChange > 0 ? '+' : ''}${fmt1(toDisplayWeight(mChange, unit))} ${weightUnit(unit)}`],
-    ['Avg sleep', avgSleep ? fmt1(avgSleep) + 'h' : 'â€“'],
-    ['Avg steps', avgSteps ? fmt0(avgSteps) : 'â€“'],
-    ['Avg protein', avgProtein ? fmt0(avgProtein) + 'g' : 'â€“'],
-    ['Avg cal in', avgCalIn ? fmt0(avgCalIn) : 'â€“'],
-    ['Avg cal out', avgCalOut ? fmt0(avgCalOut) : 'â€“'],
+    ['Weight change', wChange === null ? '—' : `${wChange > 0 ? '+' : ''}${fmt1(toDisplayWeight(wChange, unit))} ${weightUnit(unit)}`],
+    ['Body fat change', bfChange === null ? '—' : `${bfChange > 0 ? '+' : ''}${fmt1(bfChange)}%`],
+    ['Muscle change', mChange === null ? '—' : `${mChange > 0 ? '+' : ''}${fmt1(toDisplayWeight(mChange, unit))} ${weightUnit(unit)}`],
+    ['Avg sleep', avgSleep ? fmt1(avgSleep) + 'h' : '—'],
+    ['Avg steps', avgSteps ? fmt0(avgSteps) : '—'],
+    ['Avg protein', avgProtein ? fmt0(avgProtein) + 'g' : '—'],
+    ['Avg cal in', avgCalIn ? fmt0(avgCalIn) : '—'],
+    ['Avg cal out', avgCalOut ? fmt0(avgCalOut) : '—'],
     ['Sessions', String(totalSessions)],
   ];
   doc.autoTable({
@@ -4189,8 +4186,7 @@ async function exportPDF(logs, profile, dateFrom, dateTo) {
   });
   y = doc.lastAutoTable.finalY + 8;
 
-  // ---------- CHARTS ROW ----------
-  // Build aligned dates
+  // ---------- CHARTS ----------
   const dates = filtered.map(l => l.date);
   const wVals = filtered.map(l => l.weight_kg ? toDisplayWeight(l.weight_kg, unit) : null);
   const bfVals = filtered.map(l => l.body_fat_pct || null);
@@ -4227,7 +4223,7 @@ async function exportPDF(logs, profile, dateFrom, dateTo) {
     ], '', dates);
   y += 4;
 
-  // NUTRITION (page 2 likely)
+  // NUTRITION
   if (y > 240) { doc.addPage(); y = margin; }
   doc.setFontSize(11); doc.setTextColor(0, 104, 122); doc.setFont(undefined, 'bold');
   doc.text('Nutrition & energy balance', margin, y); y += 4;
@@ -4240,7 +4236,7 @@ async function exportPDF(logs, profile, dateFrom, dateTo) {
     ], '', dates);
   y += 4;
 
-  // TRAINING - steps + session count by day
+  // TRAINING
   if (y > 240) { doc.addPage(); y = margin; }
   doc.setFontSize(11); doc.setTextColor(0, 104, 122); doc.setFont(undefined, 'bold');
   doc.text('Training & activity', margin, y); y += 4;
@@ -4249,7 +4245,7 @@ async function exportPDF(logs, profile, dateFrom, dateTo) {
     [{ values: stepVals, color: '#00687a', axis: 'left', label: 'Daily steps' }], '', dates);
   y += 4;
 
-  // DIAGNOSIS / INSIGHTS
+  // ---------- ANALYSIS ----------
   if (y > 230) { doc.addPage(); y = margin; }
   doc.setFontSize(11); doc.setTextColor(0, 104, 122); doc.setFont(undefined, 'bold');
   doc.text('Analysis', margin, y); y += 5;
@@ -4261,7 +4257,7 @@ async function exportPDF(logs, profile, dateFrom, dateTo) {
     doc.autoTable({
       startY: y,
       head: [['Type', 'Finding', 'Detail']],
-      body: diagnosis.map(d => [d.tone === 'good' ? 'âœ“' : d.tone === 'warn' ? '!' : 'Â·', d.headline, d.detail]),
+      body: diagnosis.map(d => [d.tone === 'good' ? '✓' : d.tone === 'warn' ? '!' : '·', d.headline, d.detail]),
       theme: 'striped', styles: { fontSize: 8, cellPadding: 2, valign: 'top' },
       headStyles: { fillColor: [0, 104, 122], textColor: 255 },
       columnStyles: { 0: { cellWidth: 8, halign: 'center' }, 1: { cellWidth: 60, fontStyle: 'bold' } },
@@ -4310,7 +4306,7 @@ async function exportPDF(logs, profile, dateFrom, dateTo) {
     doc.autoTable({
       startY: y,
       head: [['Date', 'Marker', 'Value', 'Unit', 'Range']],
-      body: health.labs.map(l => [l.test_date, l.marker, l.value, l.unit || '', (l.reference_low !== null && l.reference_high !== null) ? `${l.reference_low}â€“${l.reference_high}` : '']),
+      body: health.labs.map(l => [l.test_date, l.marker, l.value, l.unit || '', (l.reference_low != null && l.reference_high != null) ? `${l.reference_low}–${l.reference_high}` : '']),
       theme: 'striped', styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: [0, 104, 122], textColor: 255 },
       margin: { left: margin, right: margin },
@@ -4325,13 +4321,15 @@ async function exportPDF(logs, profile, dateFrom, dateTo) {
     doc.text('Body composition scans', margin, y); y += 5;
     doc.autoTable({
       startY: y,
-      head: [['Date', `Weight ${weightUnit(unit)}`, 'BF %', `Muscle ${weightUnit(unit)}`, 'Water %', 'Visc fat']],
-      body: health.scans.map(s => [s.scan_date,
+      head: [['Date', `Weight ${weightUnit(unit)}`, 'BF %', `Lean mass ${weightUnit(unit)}`, 'Visceral fat', 'Bone density']],
+      body: health.scans.map(s => [
+        s.scan_date,
         s.weight_kg ? fmt1(toDisplayWeight(s.weight_kg, unit)) : '',
         s.body_fat_pct ?? '',
-        s.muscle_mass_kg ? fmt1(toDisplayWeight(s.muscle_mass_kg, unit)) : (s.lean_mass_kg ? fmt1(toDisplayWeight(s.lean_mass_kg, unit)) : ''),
-        s.body_water_pct ?? '',
-        s.visceral_fat ?? '']),
+        s.lean_mass_kg ? fmt1(toDisplayWeight(s.lean_mass_kg, unit)) : '',
+        s.visceral_fat ?? '',
+        s.bone_density ?? '',
+      ]),
       theme: 'striped', styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: [0, 104, 122], textColor: 255 },
       margin: { left: margin, right: margin },
@@ -4339,6 +4337,36 @@ async function exportPDF(logs, profile, dateFrom, dateTo) {
     y = doc.lastAutoTable.finalY + 6;
   }
 
+  // ---------- DAILY LOG TABLE ----------
+  doc.addPage(); y = margin;
+  doc.setFontSize(11); doc.setTextColor(0, 104, 122); doc.setFont(undefined, 'bold');
+  doc.text('Daily log', margin, y); y += 5;
+  doc.autoTable({
+    startY: y,
+    head: [['Date', 'Wt', 'BF%', 'HRV', 'RHR', 'Sleep', 'Steps', 'Cal in', 'Cal out', 'Protein', 'Alc', 'Sess']],
+    body: filtered.map(l => [
+      l.date,
+      l.weight_kg ? fmt1(toDisplayWeight(l.weight_kg, unit)) : '',
+      l.body_fat_pct ?? '', l.hrv ?? '', l.rhr ?? '',
+      l.sleep_hours ?? '', l.steps ?? '', l.calories_in ?? '', l.calories_out ?? '',
+      l.protein_g ?? '', l.alcohol_units ?? '', (l.sessions || []).length || '',
+    ]),
+    theme: 'striped', styles: { fontSize: 7, cellPadding: 1.2 },
+    headStyles: { fillColor: [0, 104, 122], textColor: 255, fontSize: 7 },
+    margin: { left: margin, right: margin },
+  });
+
+  // ---------- FOOTER ----------
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7); doc.setTextColor(140);
+    doc.text('Train With Me · Educational use only — not medical advice', margin, 290);
+    doc.text(`Page ${i} of ${pageCount}`, pageW - margin, 290, { align: 'right' });
+  }
+
+  doc.save(`train-with-me-${dateFrom}-to-${dateTo}.pdf`);
+}
   // ---------- DAILY LOG TABLE ----------
   doc.addPage(); y = margin;
   doc.setFontSize(11); doc.setTextColor(0, 104, 122); doc.setFont(undefined, 'bold');
@@ -5005,42 +5033,20 @@ function HealthLogView({ profile, logs }) {
         db
           .from('body_scans')
           .select('*')
-          .order('scandate', { ascending: false }),
+          .order('scan_date', { ascending: false }),   // was: scandate
         db
           .from('symptoms')
           .select('*')
-          .order('date', { ascending: false }),
+          .order('date', { ascending: false }),         // fine, no change
         db
           .from('medications')
           .select('*')
-          .order('startdate', { ascending: false, nullsFirst: false }),
+          .order('start_date', { ascending: false, nullsFirst: false }),  // was: startdate
         db
           .from('labs')
           .select('*')
-          .order('testdate', { ascending: false }),
+          .order('test_date', { ascending: false }),    // was: testdate
       ]);
-
-      if (s.error) throw s.error;
-      if (sy.error) throw sy.error;
-      if (m.error) throw m.error;
-      if (l.error) throw l.error;
-
-      setScans(s.data || []);
-      setSymptoms(sy.data || []);
-      setMeds(m.data || []);
-      setLabs(l.data || []);
-    } catch (e) {
-      console.error('Health log load failed:', e);
-      alert(`Health log load failed: ${e.message}`);
-      setScans([]);
-      setSymptoms([]);
-      setMeds([]);
-      setLabs([]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   useEffect(() => {
     loadAll();
   }, []);
@@ -5132,7 +5138,7 @@ function BodyScansSection({ scans, unit, onChange }) {
           <div>
             <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Body composition scans</h3>
             <p style={{ fontSize: 13, color: 'var(--text-mute)' }}>
-              DEXA, InBody, Hume â€” your milestone measurements. Compare across scans to see real body comp change.
+              DEXA, InBody, Hume — your milestone measurements. Compare across scans to see real body comp change.
             </p>
           </div>
           {!adding && !editing && (
@@ -5145,10 +5151,7 @@ function BodyScansSection({ scans, unit, onChange }) {
         {adding && (
           <BodyScanForm
             unit={unit}
-            onSave={async () => {
-              setAdding(false);
-              onChange();
-            }}
+            onSave={async () => { setAdding(false); onChange(); }}
             onCancel={() => setAdding(false)}
           />
         )}
@@ -5157,10 +5160,7 @@ function BodyScansSection({ scans, unit, onChange }) {
           <BodyScanForm
             unit={unit}
             scan={editing}
-            onSave={async () => {
-              setEditing(null);
-              onChange();
-            }}
+            onSave={async () => { setEditing(null); onChange(); }}
             onCancel={() => setEditing(null)}
           />
         )}
@@ -5177,122 +5177,38 @@ function BodyScansSection({ scans, unit, onChange }) {
       {scans.map((scan, i) => {
         const prev = scans[i + 1];
         return (
-          <div
-            key={scan.id}
-            className="card"
-            style={{ marginBottom: 12, cursor: 'pointer' }}
-            onClick={() => setEditing(scan)}
-          >
+          <div key={scan.id} className="card" style={{ marginBottom: 12, cursor: 'pointer' }} onClick={() => setEditing(scan)}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 700 }}>
-                  {scan.scantype || 'Scan'} Â· {scan.scandate}
-                </div>
+              <div style={{ fontSize: 15, fontWeight: 700 }}>
+                {scan.scan_type || 'Scan'} · {scan.scan_date}
               </div>
               <button
                 onClick={async (e) => {
                   e.stopPropagation();
                   if (confirm('Delete this scan?')) {
                     const { error } = await db.from('body_scans').delete().eq('id', scan.id);
-                    if (error) {
-                      alert(error.message);
-                      return;
-                    }
+                    if (error) { alert(error.message); return; }
                     onChange();
                   }
                 }}
                 style={{ background: 'transparent', border: 'none', color: 'var(--text-faint)', fontSize: 12, cursor: 'pointer' }}
-              >
-                Delete
-              </button>
+              >Delete</button>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
-              <ScanMetric
-                label="Weight"
-                value={scan.weightkg}
-                prev={prev?.weightkg}
-                unit={weightUnit(unit)}
-                convert={v => toDisplayWeight(v, unit)}
-              />
-
-              <ScanMetric
-                label="Body fat"
-                value={scan.bodyfatpct}
-                prev={prev?.bodyfatpct}
-                unit="%"
-                lowerBetter
-              />
-
-              <ScanMetric
-                label="Lean mass"
-                value={scan.leanmasskg}
-                prev={prev?.leanmasskg}
-                unit={weightUnit(unit)}
-                convert={v => toDisplayWeight(v, unit)}
-                higherBetter
-              />
-
-              <ScanMetric
-                label="Fat mass"
-                value={scan.fatmasskg}
-                prev={prev?.fatmasskg}
-                unit={weightUnit(unit)}
-                convert={v => toDisplayWeight(v, unit)}
-                lowerBetter
-              />
-
-              <ScanMetric
-                label="Visceral fat"
-                value={scan.visceralfat}
-                prev={prev?.visceralfat}
-                lowerBetter
-              />
-
-              {scan.scantype === 'DEXA' && (
-                <ScanMetric
-                  label="Bone density"
-                  value={scan.bonedensity}
-                  prev={prev?.bonedensity}
-                  higherBetter
-                />
-              )}
-
-              {scan.scantype === 'InBody' && (
-                <ScanMetric
-                  label="ECW/TBW"
-                  value={scan.ecwtbw}
-                  prev={prev?.ecwtbw}
-                  unit="%"
-                  lowerBetter
-                />
-              )}
-
-              {scan.androidfatpct != null && (
-                <ScanMetric
-                  label="Android fat"
-                  value={scan.androidfatpct}
-                  prev={prev?.androidfatpct}
-                  unit="%"
-                  lowerBetter
-                />
-              )}
-
-              {scan.gynoidfatpct != null && (
-                <ScanMetric
-                  label="Gynoid fat"
-                  value={scan.gynoidfatpct}
-                  prev={prev?.gynoidfatpct}
-                  unit="%"
-                  lowerBetter
-                />
-              )}
+              <ScanMetric label="Weight" value={scan.weight_kg} prev={prev?.weight_kg} unit={weightUnit(unit)} convert={v => toDisplayWeight(v, unit)} />
+              <ScanMetric label="Body fat" value={scan.body_fat_pct} prev={prev?.body_fat_pct} unit="%" lowerBetter />
+              <ScanMetric label="Lean mass" value={scan.lean_mass_kg} prev={prev?.lean_mass_kg} unit={weightUnit(unit)} convert={v => toDisplayWeight(v, unit)} higherBetter />
+              <ScanMetric label="Fat mass" value={scan.fat_mass_kg} prev={prev?.fat_mass_kg} unit={weightUnit(unit)} convert={v => toDisplayWeight(v, unit)} lowerBetter />
+              <ScanMetric label="Visceral fat" value={scan.visceral_fat} prev={prev?.visceral_fat} lowerBetter />
+              {scan.scan_type === 'DEXA' && <ScanMetric label="Bone density" value={scan.bone_density} prev={prev?.bone_density} higherBetter />}
+              {scan.scan_type === 'InBody' && <ScanMetric label="ECW/TBW" value={scan.ecw_tbw} prev={prev?.ecw_tbw} unit="%" lowerBetter />}
+              {scan.android_fat_pct != null && <ScanMetric label="Android fat" value={scan.android_fat_pct} prev={prev?.android_fat_pct} unit="%" lowerBetter />}
+              {scan.gynoid_fat_pct != null && <ScanMetric label="Gynoid fat" value={scan.gynoid_fat_pct} prev={prev?.gynoid_fat_pct} unit="%" lowerBetter />}
             </div>
 
             {scan.notes && (
-              <p style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 12, lineHeight: 1.5, fontStyle: 'italic' }}>
-                {scan.notes}
-              </p>
+              <p style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 12, lineHeight: 1.5, fontStyle: 'italic' }}>{scan.notes}</p>
             )}
           </div>
         );
@@ -5323,20 +5239,19 @@ function ScanMetric({ label, value, prev, unit = '', convert, higherBetter, lowe
     </div>
   );
 }
-
 function BodyScanForm({ unit, scan = null, onSave, onCancel }) {
   const editing = !!scan;
-  const [date, setDate] = useState(scan?.scandate || ymd(today()));
-  const [type, setType] = useState(scan?.scantype || 'InBody');
-  const [w, setW] = useState(scan?.weightkg != null ? toDisplayWeight(scan.weightkg, unit) : '');
-  const [bf, setBf] = useState(scan?.bodyfatpct ?? '');
-  const [lean, setLean] = useState(scan?.leanmasskg != null ? toDisplayWeight(scan.leanmasskg, unit) : '');
-  const [fat, setFat] = useState(scan?.fatmasskg != null ? toDisplayWeight(scan.fatmasskg, unit) : '');
-  const [visc, setVisc] = useState(scan?.visceralfat ?? '');
-  const [bone, setBone] = useState(scan?.bonedensity ?? '');
-  const [ecwTbw, setEcwTbw] = useState(scan?.ecwtbw ?? '');
-  const [android, setAndroid] = useState(scan?.androidfatpct ?? '');
-  const [gynoid, setGynoid] = useState(scan?.gynoidfatpct ?? '');
+  const [date, setDate] = useState(scan?.scan_date || ymd(today()));
+  const [type, setType] = useState(scan?.scan_type || 'InBody');
+  const [w, setW] = useState(scan?.weight_kg != null ? fmt1(toDisplayWeight(scan.weight_kg, unit)) : '');
+  const [bf, setBf] = useState(scan?.body_fat_pct ?? '');
+  const [lean, setLean] = useState(scan?.lean_mass_kg != null ? fmt1(toDisplayWeight(scan.lean_mass_kg, unit)) : '');
+  const [fat, setFat] = useState(scan?.fat_mass_kg != null ? fmt1(toDisplayWeight(scan.fat_mass_kg, unit)) : '');
+  const [visc, setVisc] = useState(scan?.visceral_fat ?? '');
+  const [bone, setBone] = useState(scan?.bone_density ?? '');
+  const [ecwTbw, setEcwTbw] = useState(scan?.ecw_tbw ?? '');
+  const [android, setAndroid] = useState(scan?.android_fat_pct ?? '');
+  const [gynoid, setGynoid] = useState(scan?.gynoid_fat_pct ?? '');
   const [notes, setNotes] = useState(scan?.notes || '');
   const [saving, setSaving] = useState(false);
 
@@ -5346,24 +5261,22 @@ function BodyScanForm({ unit, scan = null, onSave, onCancel }) {
   async function save() {
     setSaving(true);
     const { data: { user } } = await db.auth.getUser();
-
     const row = {
       id: scan?.id,
-      userid: user.id,
-      scandate: date,
-      scantype: type,
-      weightkg: w ? fromDisplayWeight(Number(w), unit) : null,
-      bodyfatpct: bf ? Number(bf) : null,
-      leanmasskg: lean ? fromDisplayWeight(Number(lean), unit) : null,
-      fatmasskg: fat ? fromDisplayWeight(Number(fat), unit) : null,
-      visceralfat: visc ? Number(visc) : null,
-      bonedensity: isDexa && bone ? Number(bone) : null,
-      ecwtbw: isInBody && ecwTbw ? Number(ecwTbw) : null,
-      androidfatpct: isDexa && android ? Number(android) : null,
-      gynoidfatpct: isDexa && gynoid ? Number(gynoid) : null,
+      user_id: user.id,
+      scan_date: date,
+      scan_type: type,
+      weight_kg: w ? fromDisplayWeight(Number(w), unit) : null,
+      body_fat_pct: bf ? Number(bf) : null,
+      lean_mass_kg: lean ? fromDisplayWeight(Number(lean), unit) : null,
+      fat_mass_kg: fat ? fromDisplayWeight(Number(fat), unit) : null,
+      visceral_fat: visc ? Number(visc) : null,
+      bone_density: isDexa && bone ? Number(bone) : null,
+      ecw_tbw: isInBody && ecwTbw ? Number(ecwTbw) : null,
+      android_fat_pct: isDexa && android ? Number(android) : null,
+      gynoid_fat_pct: isDexa && gynoid ? Number(gynoid) : null,
       notes: notes || null,
     };
-
     const { error } = await db.from('body_scans').upsert(row);
     setSaving(false);
     if (error) { alert(error.message); return; }
