@@ -5086,14 +5086,65 @@ function BodyScansSection({ scans, unit, onChange }) {
               <button onClick={async () => { if (confirm('Delete this scan?')) { await db.from('body_scans').delete().eq('id', scan.id); onChange(); } }} style={{ background: 'transparent', border: 'none', color: 'var(--text-faint)', fontSize: 12, cursor: 'pointer' }}>Delete</button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
-              <ScanMetric label="Weight" value={scan.weight_kg} prev={prev?.weight_kg} unit={weightUnit(unit)} convert={(v) => toDisplayWeight(v, unit)} />
-              <ScanMetric label="Body fat %" value={scan.body_fat_pct} prev={prev?.body_fat_pct} unit="%" lowerBetter />
-              <ScanMetric label="Lean mass" value={scan.lean_mass_kg} prev={prev?.lean_mass_kg} unit={weightUnit(unit)} convert={(v) => toDisplayWeight(v, unit)} higherBetter />
-              <ScanMetric label="Fat mass" value={scan.fat_mass_kg} prev={prev?.fat_mass_kg} unit={weightUnit(unit)} convert={(v) => toDisplayWeight(v, unit)} lowerBetter />
-              <ScanMetric label="Visceral fat" value={scan.visceral_fat} prev={prev?.visceral_fat} lowerBetter />
-              <ScanMetric label="Bone density" value={scan.bone_density} prev={prev?.bone_density} higherBetter />
-              <ScanMetric label="Android fat %" value={scan.android_fat_pct} prev={prev?.android_fat_pct} unit="%" lowerBetter />
-              <ScanMetric label="Gynoid fat %" value={scan.gynoid_fat_pct} prev={prev?.gynoid_fat_pct} unit="%" />
+             <ScanMetric
+  label="Weight"
+  value={scan.weightkg}
+  prev={prev?.weightkg}
+  unit={weightUnit(unit)}
+  convert={v => toDisplayWeight(v, unit)}
+/>
+
+<ScanMetric
+  label="Body fat"
+  value={scan.bodyfatpct}
+  prev={prev?.bodyfatpct}
+  unit="%"
+  lowerBetter
+/>
+
+<ScanMetric
+  label="Lean mass"
+  value={scan.leanmasskg}
+  prev={prev?.leanmasskg}
+  unit={weightUnit(unit)}
+  convert={v => toDisplayWeight(v, unit)}
+  higherBetter
+/>
+
+<ScanMetric
+  label="Fat mass"
+  value={scan.fatmasskg}
+  prev={prev?.fatmasskg}
+  unit={weightUnit(unit)}
+  convert={v => toDisplayWeight(v, unit)}
+  lowerBetter
+/>
+
+<ScanMetric
+  label="Visceral fat"
+  value={scan.visceralfat}
+  prev={prev?.visceralfat}
+  lowerBetter
+/>
+
+{scan.scantype === 'DEXA' && (
+  <ScanMetric
+    label="Bone density"
+    value={scan.bonedensity}
+    prev={prev?.bonedensity}
+    higherBetter
+  />
+)}
+
+{scan.scantype === 'InBody' && (
+  <ScanMetric
+    label="ECW/TBW"
+    value={scan.ecwtbw}
+    prev={prev?.ecwtbw}
+    unit="%"
+    lowerBetter
+  />
+)}
             </div>
             {scan.notes && <p style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 12, lineHeight: 1.5, fontStyle: 'italic' }}>{scan.notes}</p>}
           </div>
