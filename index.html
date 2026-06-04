@@ -5000,27 +5000,35 @@ function HealthLogView({ profile, logs }) {
   const [labs, setLabs] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  async function loadAll() {
+async function loadAll() {
     setLoading(true);
     try {
       const [s, sy, m, l] = await Promise.all([
-        db
-          .from('body_scans')
-          .select('*')
-          .order('scan_date', { ascending: false }),   // was: scandate
-        db
-          .from('symptoms')
-          .select('*')
-          .order('date', { ascending: false }),         // fine, no change
-        db
-          .from('medications')
-          .select('*')
-          .order('start_date', { ascending: false, nullsFirst: false }),  // was: startdate
-        db
-          .from('labs')
-          .select('*')
-          .order('test_date', { ascending: false }),    // was: testdate
+        db.from('body_scans').select('*').order('scan_date', { ascending: false }),
+        db.from('symptoms').select('*').order('date', { ascending: false }),
+        db.from('medications').select('*').order('start_date', { ascending: false, nullsFirst: false }),
+        db.from('labs').select('*').order('test_date', { ascending: false }),
       ]);
+      if (s.error) throw s.error;
+      if (sy.error) throw sy.error;
+      if (m.error) throw m.error;
+      if (l.error) throw l.error;
+      setScans(s.data || []);
+      setSymptoms(sy.data || []);
+      setMeds(m.data || []);
+      setLabs(l.data || []);
+    } catch (e) {
+      console.error('Health log load failed:', e);
+      alert(`Health log load failed: ${e.message}`);
+      setScans([]);
+      setSymptoms([]);
+      setMeds([]);
+      setLabs([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadAll();
   }, []);
